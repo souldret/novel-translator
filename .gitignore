@@ -41,3 +41,7 @@ build/
 # Log dosyaları
 *.log
 logs/
+
+# Geçici rapor dosyaları
+pyflakes_report.txt
+*.report.txt

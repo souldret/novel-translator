@@ -1,0 +1,696 @@
+/* ============================================================
+   DARK THEME — Novel Translator
+   Renk Paleti:
+     Arkaplan       : #0f0a1a
+     Panel arkaplan : #0a0612
+     Vurgu          : #9b59d0
+     Metin          : #e8e0f0
+     Soluk          : #6b5a7a
+     Başarı         : #a0f0b0
+     Uyarı          : #f0d090
+     Tehlike        : #f0a0b0
+     Kenarlık       : #2d1a40
+     Girdi arkaplan : #1a1225
+   ============================================================ */
+
+/* ── Genel Pencere & Widget ── */
+QMainWindow,
+QDialog {
+    background-color: #0f0a1a;
+    color: #e8e0f0;
+}
+
+QWidget {
+    background-color: #0f0a1a;
+    color: #e8e0f0;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 13px;
+}
+
+/* ── Düğmeler ── */
+QPushButton {
+    background-color: #9b59d0;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 30px;
+}
+
+QPushButton:hover {
+    background-color: #b06fe0;
+}
+
+QPushButton:pressed {
+    background-color: #7a3faa;
+}
+
+QPushButton:disabled {
+    background-color: #2d1a40;
+    color: #6b5a7a;
+}
+
+QPushButton:flat {
+    background-color: transparent;
+    border: 1px solid #2d1a40;
+    color: #9b59d0;
+}
+
+QPushButton:flat:hover {
+    background-color: #1a1225;
+}
+
+/* ── Metin Girdi Alanları ── */
+QLineEdit {
+    background-color: #1a1225;
+    color: #e8e0f0;
+    border: 1px solid #2d1a40;
+    border-radius: 5px;
+    padding: 5px 9px;
+    font-size: 13px;
+    selection-background-color: #9b59d0;
+    selection-color: #ffffff;
+}
+
+QLineEdit:focus {
+    border: 1px solid #9b59d0;
+}
+
+QLineEdit:disabled {
+    background-color: #0a0612;
+    color: #6b5a7a;
+    border: 1px solid #1a1225;
+}
+
+QLineEdit::placeholder {
+    color: #3d2d55;
+}
+
+/* ── Metin Düzenleyiciler ── */
+QTextEdit,
+QPlainTextEdit {
+    background-color: #1a1225;
+    color: #e8e0f0;
+    border: 1px solid #2d1a40;
+    border-radius: 5px;
+    padding: 6px;
+    font-size: 13px;
+    selection-background-color: #9b59d0;
+    selection-color: #ffffff;
+}
+
+QTextEdit:focus,
+QPlainTextEdit:focus {
+    border: 1px solid #9b59d0;
+}
+
+QTextEdit:disabled,
+QPlainTextEdit:disabled {
+    background-color: #0a0612;
+    color: #6b5a7a;
+}
+
+/* ── Açılır Kutu ── */
+QComboBox {
+    background-color: #1a1225;
+    color: #e8e0f0;
+    border: 1px solid #2d1a40;
+    border-radius: 5px;
+    padding: 5px 9px;
+    font-size: 13px;
+    min-height: 28px;
+}
+
+QComboBox:hover {
+    border: 1px solid #9b59d0;
+}
+
+QComboBox:focus {
+    border: 1px solid #9b59d0;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 22px;
+    border-left: 1px solid #2d1a40;
+    border-top-right-radius: 5px;
+    border-bottom-right-radius: 5px;
+}
+
+QComboBox::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #9b59d0;
+    width: 0;
+    height: 0;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #1a1225;
+    color: #e8e0f0;
+    border: 1px solid #2d1a40;
+    selection-background-color: #9b59d0;
+    selection-color: #ffffff;
+    outline: none;
+}
+
+QComboBox:disabled {
+    background-color: #0a0612;
+    color: #6b5a7a;
+    border: 1px solid #1a1225;
+}
+
+/* ── Liste Widget ── */
+QListWidget {
+    background-color: #1a1225;
+    color: #e8e0f0;
+    border: 1px solid #2d1a40;
+    border-radius: 5px;
+    outline: none;
+}
+
+QListWidget::item {
+    padding: 5px 8px;
+    border-radius: 3px;
+}
+
+QListWidget::item:hover {
+    background-color: #2d1a40;
+}
+
+QListWidget::item:selected {
+    background-color: #9b59d0;
+    color: #ffffff;
+}
+
+/* ── Tablo Widget & Görünümü ── */
+QTableWidget,
+QTableView {
+    background-color: #1a1225;
+    color: #e8e0f0;
+    border: 1px solid #2d1a40;
+    border-radius: 5px;
+    gridline-color: #2d1a40;
+    outline: none;
+    selection-background-color: #9b59d0;
+    selection-color: #ffffff;
+}
+
+QTableWidget::item,
+QTableView::item {
+    padding: 4px 8px;
+}
+
+QTableWidget::item:hover,
+QTableView::item:hover {
+    background-color: #241530;
+}
+
+QTableWidget::item:selected,
+QTableView::item:selected {
+    background-color: #9b59d0;
+    color: #ffffff;
+}
+
+/* ── Başlık Görünümü ── */
+QHeaderView {
+    background-color: #0a0612;
+    color: #e8e0f0;
+    border: none;
+}
+
+QHeaderView::section {
+    background-color: #0a0612;
+    color: #9b59d0;
+    border: none;
+    border-right: 1px solid #2d1a40;
+    border-bottom: 1px solid #2d1a40;
+    padding: 5px 8px;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+QHeaderView::section:hover {
+    background-color: #1a1225;
+}
+
+QHeaderView::section:checked {
+    background-color: #9b59d0;
+    color: #ffffff;
+}
+
+/* ── Sekme Widget & Çubuğu ── */
+QTabWidget {
+    background-color: #0f0a1a;
+    border: none;
+}
+
+QTabWidget::pane {
+    background-color: #0f0a1a;
+    border: 1px solid #2d1a40;
+    border-radius: 5px;
+}
+
+QTabBar {
+    background-color: transparent;
+}
+
+QTabBar::tab {
+    background-color: #0a0612;
+    color: #6b5a7a;
+    border: 1px solid #2d1a40;
+    border-bottom: none;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    padding: 7px 16px;
+    margin-right: 2px;
+    font-size: 13px;
+}
+
+QTabBar::tab:hover {
+    background-color: #1a1225;
+    color: #e8e0f0;
+}
+
+QTabBar::tab:selected {
+    background-color: #0f0a1a;
+    color: #9b59d0;
+    border-color: #2d1a40;
+    border-bottom: 2px solid #9b59d0;
+    font-weight: 600;
+}
+
+/* ── Kaydırma Çubuğu ── */
+QScrollBar:vertical {
+    background-color: #0a0612;
+    width: 10px;
+    border-radius: 5px;
+    margin: 0;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #2d1a40;
+    border-radius: 5px;
+    min-height: 24px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #9b59d0;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+    background: none;
+}
+
+QScrollBar:horizontal {
+    background-color: #0a0612;
+    height: 10px;
+    border-radius: 5px;
+    margin: 0;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #2d1a40;
+    border-radius: 5px;
+    min-width: 24px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #9b59d0;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0;
+    background: none;
+}
+
+/* ── İlerleme Çubuğu ── */
+QProgressBar {
+    background-color: #1a1225;
+    border: 1px solid #2d1a40;
+    border-radius: 5px;
+    text-align: center;
+    color: #e8e0f0;
+    font-size: 12px;
+    min-height: 18px;
+}
+
+QProgressBar::chunk {
+    background-color: #9b59d0;
+    border-radius: 4px;
+}
+
+/* ── Sayı Girişleri ── */
+QSpinBox,
+QDoubleSpinBox {
+    background-color: #1a1225;
+    color: #e8e0f0;
+    border: 1px solid #2d1a40;
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-size: 13px;
+    min-height: 28px;
+}
+
+QSpinBox:focus,
+QDoubleSpinBox:focus {
+    border: 1px solid #9b59d0;
+}
+
+QSpinBox::up-button,
+QDoubleSpinBox::up-button {
+    background-color: #2d1a40;
+    border-left: 1px solid #2d1a40;
+    border-bottom: 1px solid #2d1a40;
+    border-top-right-radius: 5px;
+    width: 18px;
+}
+
+QSpinBox::down-button,
+QDoubleSpinBox::down-button {
+    background-color: #2d1a40;
+    border-left: 1px solid #2d1a40;
+    border-bottom-right-radius: 5px;
+    width: 18px;
+}
+
+QSpinBox::up-button:hover,
+QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover,
+QDoubleSpinBox::down-button:hover {
+    background-color: #9b59d0;
+}
+
+QSpinBox:disabled,
+QDoubleSpinBox:disabled {
+    background-color: #0a0612;
+    color: #6b5a7a;
+}
+
+/* ── Grup Kutusu ── */
+QGroupBox {
+    background-color: #0f0a1a;
+    border: 1px solid #2d1a40;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding-top: 8px;
+    font-weight: 600;
+    color: #9b59d0;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 6px;
+    color: #9b59d0;
+    background-color: #0f0a1a;
+    left: 10px;
+}
+
+/* ── Bölücü ── */
+QSplitter::handle {
+    background-color: #2d1a40;
+}
+
+QSplitter::handle:horizontal {
+    width: 3px;
+}
+
+QSplitter::handle:vertical {
+    height: 3px;
+}
+
+QSplitter::handle:hover {
+    background-color: #9b59d0;
+}
+
+/* ── Menü Çubuğu ── */
+QMenuBar {
+    background-color: #0a0612;
+    color: #e8e0f0;
+    border-bottom: 1px solid #2d1a40;
+    padding: 2px 4px;
+}
+
+QMenuBar::item {
+    background-color: transparent;
+    padding: 5px 12px;
+    border-radius: 4px;
+}
+
+QMenuBar::item:selected,
+QMenuBar::item:pressed {
+    background-color: #1a1225;
+    color: #9b59d0;
+}
+
+/* ── Menü ── */
+QMenu {
+    background-color: #1a1225;
+    color: #e8e0f0;
+    border: 1px solid #2d1a40;
+    border-radius: 5px;
+    padding: 4px;
+}
+
+QMenu::item {
+    padding: 6px 28px 6px 16px;
+    border-radius: 3px;
+}
+
+QMenu::item:selected {
+    background-color: #9b59d0;
+    color: #ffffff;
+}
+
+QMenu::separator {
+    height: 1px;
+    background-color: #2d1a40;
+    margin: 4px 8px;
+}
+
+/* ── Mesaj Kutusu ── */
+QMessageBox {
+    background-color: #0f0a1a;
+    color: #e8e0f0;
+}
+
+QMessageBox QLabel {
+    color: #e8e0f0;
+    background-color: transparent;
+}
+
+QMessageBox QPushButton {
+    min-width: 80px;
+}
+
+/* ── Onay Kutusu ── */
+QCheckBox {
+    color: #e8e0f0;
+    spacing: 7px;
+}
+
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #2d1a40;
+    border-radius: 3px;
+    background-color: #1a1225;
+}
+
+QCheckBox::indicator:hover {
+    border-color: #9b59d0;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #9b59d0;
+    border-color: #9b59d0;
+}
+
+QCheckBox::indicator:checked:hover {
+    background-color: #b06fe0;
+}
+
+QCheckBox:disabled {
+    color: #6b5a7a;
+}
+
+QCheckBox::indicator:disabled {
+    background-color: #0a0612;
+    border-color: #1a1225;
+}
+
+/* ── Etiket ── */
+QLabel {
+    color: #e8e0f0;
+    background-color: transparent;
+}
+
+/* ── Araç İpucu ── */
+QToolTip {
+    background-color: #1a1225;
+    color: #e8e0f0;
+    border: 1px solid #9b59d0;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+/* ── Kaydırma Alanı ── */
+QScrollArea {
+    background-color: #0f0a1a;
+    border: none;
+}
+
+QScrollArea > QWidget > QWidget {
+    background-color: #0f0a1a;
+}
+
+/* ── Çerçeve ── */
+QFrame {
+    background-color: transparent;
+    border: none;
+}
+
+QFrame[frameShape="4"],
+QFrame[frameShape="5"] {
+    background-color: #2d1a40;
+    border: none;
+    max-height: 1px;
+}
+
+/* ── Durum Çubuğu ── */
+QStatusBar {
+    background-color: #0a0612;
+    color: #6b5a7a;
+    border-top: 1px solid #2d1a40;
+    font-size: 12px;
+    padding: 2px 8px;
+}
+
+QStatusBar::item {
+    border: none;
+}
+
+/* ============================================================
+   ObjectName Bazlı Stiller
+   ============================================================ */
+
+/* Sol panel */
+#solPanel {
+    background-color: #0a0612;
+}
+
+/* Ayırıcı çizgi */
+#ayiriciCizgi {
+    background-color: #2d1a40;
+    max-height: 1px;
+    border: none;
+}
+
+/* Başlık etiketi */
+#baslikLabel {
+    color: #dcc0f0;
+    font-size: 16px;
+    font-weight: 700;
+    background-color: transparent;
+}
+
+/* Alt başlık etiketi */
+#altBaslikLabel {
+    color: #6b5a7a;
+    font-size: 11px;
+    background-color: transparent;
+}
+
+/* Bölüm başlık etiketi */
+#bolumBaslikLabel {
+    color: #8b7aaa;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    background-color: transparent;
+}
+
+/* Yer tutucu etiketi */
+#placeholderLabel {
+    color: #3d2d55;
+    font-size: 15px;
+    background-color: transparent;
+}
+
+/* Hata etiketi */
+#hataLabel {
+    color: #f0a0b0;
+    font-size: 12px;
+    background-color: transparent;
+}
+
+/* AI durum etiketi — duruma göre */
+#aiDurumLabel[durum="pasif"] {
+    color: #6b5a7a;
+}
+
+#aiDurumLabel[durum="uyari"] {
+    color: #f0d090;
+}
+
+#aiDurumLabel[durum="hata"] {
+    color: #f0a0b0;
+}
+
+#aiDurumLabel[durum="basarili"] {
+    color: #a0f0b0;
+}
+
+/* Tehlikeli düğme */
+#tehlikeliButon {
+    background-color: #c0392b;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 18px;
+    font-weight: 600;
+}
+
+#tehlikeliButon:hover {
+    background-color: #e74c3c;
+}
+
+#tehlikeliButon:pressed {
+    background-color: #a93226;
+}
+
+/* İkincil düğme */
+#ikincilButon {
+    background-color: #2d1a40;
+    color: #e8e0f0;
+    border: 1px solid #3d2a55;
+    border-radius: 6px;
+    padding: 7px 18px;
+    font-weight: 600;
+}
+
+#ikincilButon:hover {
+    background-color: #3d2a55;
+    border-color: #9b59d0;
+}
+
+#ikincilButon:pressed {
+    background-color: #1a1225;
+}
+
+/* Sözlük başlık etiketi */
+#sozlukBaslikLabel {
+    color: #9b59d0;
+    font-size: 13px;
+    font-weight: 700;
+    background-color: transparent;
+}

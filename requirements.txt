@@ -1,0 +1,19 @@
+# Novel Çevirmen — Python Bağımlılıkları
+# Kurulum: pip install -r requirements.txt
+
+# ── Arayüz çerçevesi ──────────────────────────────────────────────────────────
+PyQt6>=6.4.0
+
+# ── AI Sağlayıcı SDK'ları ─────────────────────────────────────────────────────
+# OpenAI (GPT-4o ve diğerleri) + xAI Grok + OpenRouter için kullanılır
+openai>=1.0.0
+
+# Anthropic Claude serisi
+anthropic>=0.20.0
+
+# Google Gemini serisi
+google-generativeai>=0.4.0
+
+# ── Geliştirme / paketleme (isteğe bağlı) ─────────────────────────────────────
+# pytest>=7.0.0
+# pyinstaller>=6.0.0
