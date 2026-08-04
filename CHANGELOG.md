@@ -48,6 +48,43 @@ Tüm önemli değişiklikler bu dosyada belgelenir.
   - Test 5: `lookup_all_in_text` greedy matching (`Lin Feng Clan` önce, `Lin Feng` sonra)
   - Test 6: `confidence=0` edge case
 
+#### Mimari Geliştirmeler — Story Consistency Dictionary v2 (2026-08-04)
+
+**Geliştirme 1 — EntityType tek kaynak doğruluk (story_dict.py + glossary_widget.py + database.py)**
+
+- `EntityType` sınıfı `_GORUNUM`, `_RENK`, `_KATEGORI_TO_ENTITY`, `_ENTITY_TO_KATEGORI`, `SECIM_LISTESI` dict'leri ve `goruntu()`, `renk()`, `kategoriden()`, `entity_den_kategori()`, `gecerli_mi()` classmethod'ları ile tam bir single source of truth enum'una dönüştürüldü.
+- `glossary_widget.py`'daki `ENTITY_GORUNUM`, `ENTITY_RENKLER`, `KATEGORI_TO_ENTITY_TYPE` sabitleri artık `EntityType` sınıfından türetiliyor — kopyalı tanım kaldırıldı.
+- `SozlukGirdisiDialog` combobox artık eski `KATEGORI_KODLAR` yerine `EntityType.SECIM_LISTESI`'ni kullanıyor; `sonuc_entity_type` primary alan, `sonuc_kategori` türetiliyor.
+- DB migration v5: `entity_type` boş/null olan sözlük kayıtları `kategori` alanından `EntityType.kategoriden()` ile dönüştürülüyor.
+
+**Geliştirme 2 — Toplu işlem desteği (glossary_widget.py + database.py)**
+
+- `QTableWidget.ExtendedSelection` modu: Ctrl+tık ile çoklu satır seçimi.
+- Seçim ≥ 2 satır olduğunda toplu işlem çubuğu (`_toplu_cubuk`) otomatik görünür.
+- Toplu işlemler: 🔒 Kilitle, 🔓 Kilidi Aç, Türü Değiştir (combo), 🗑 Sil.
+- DB metodları: `sozluk_girisleri_toplu_kilitle()`, `sozluk_girisleri_toplu_sil()`, `sozluk_girisleri_toplu_entity_degistir()` — hepsi tek `executemany` transaction.
+
+**Geliştirme 3 — Öneri merge aksiyonu (glossary_widget.py + database.py)**
+
+- `db.oneri_birlesim_adayi_bul(seri_id, oneri_id)`: öneri için `normalize_key` çakışan ana sözlük kaydını döndürür.
+- `db.oneri_birlestir(oneri_id, hedef_id, cevrilmis_terim)`: occurrence artırır, öneriyi `birlestirildi` durumuna getirir.
+- Öneri satırında normalize_key çakışması varsa **⇄ Birleştir** butonu otomatik görünür; tooltip'te hangi mevcut terimle eşleştiği gösterilir.
+
+**Geliştirme 4 — Sözlük uyum kontrolü widget entegrasyonu (glossary_widget.py)**
+
+- `GlossaryWidget.set_aktif_bolum_metni(cevrilmis_metin)`: ana pencereden aktif bölüm çevirisini set eder.
+- `_uyum_kontrolu_ac()`: onaylı/kilitli terimler üzerinde `sozluk_uyum_goster()` diyaloğunu açar.
+- Araç çubuğuna **Uyum Kontrolü** butonu eklendi.
+
+**Geliştirme 5 — Feedback öğrenme mekanizması (database.py + story_dict.py + glossary_widget.py)**
+
+- DB migration v6: `sozluk_feedback` tablosu (`seri_id`, `normalize_key`, `entity_type`, `aksiyon`, `orijinal_confidence`).
+- `db.feedback_kaydet()`: her onayla/reddet/birleştir kararını kaydeder.
+- `db.feedback_istatistikleri_getir(seri_id)`: entity_type bazında onay/ret oranları.
+- `analyze_chapter(feedback_istatistikleri=...)`: red_orani ≥ 0.70 → confidence cezası; red_orani ≤ 0.20 + 3+ onay → %10 bonus.
+- `_tum_bolumlerden_tara()` feedback istatistiklerini engine'e geçiriyor.
+- `_oneri_onayla`, `_oneri_reddet` feedback tablosuna otomatik yazıyor.
+
 #### Performans Optimizasyonları (2026-08-04)
 
 **`story_dict.py`**

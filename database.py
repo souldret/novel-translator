@@ -21,7 +21,7 @@ from text_utils import sozlukte_eslesenleri_bul
 DB_YOLU = os.path.join(os.path.dirname(os.path.abspath(__file__)), "novel_cevirmen.db")
 
 # Mevcut şema sürümü — yeni migrasyon ekleyince artır
-SCHEMA_SURUMU = 4  # v4: sozluk/sozluk_oneri üzerinde performans index'leri
+SCHEMA_SURUMU = 6  # v6: sozluk_feedback tablosu; confidence öğrenme mekanizması
 
 # Modül düzeyinde logger
 logger = logging.getLogger("novel_cevirmen.database")
@@ -266,6 +266,51 @@ class DatabaseManager:
                             logger.info(f"v4: Index oluşturuldu: {ddl.split('idx_')[1].split(' ')[0]}")
                         except sqlite3.OperationalError as e:
                             logger.warning(f"v4: Index oluşturulamadı (zaten var?): {e}")
+
+                # Migrasyon v4 → v5: kategori alanını entity_type'a dönüştür
+                if mevcut_surum < 5:
+                    from story_dict import EntityType as _ET
+                    kat_map = _ET._KATEGORI_TO_ENTITY
+                    # Sadece entity_type boş/null olan kayıtları güncelle
+                    sozluk_satirlari = conn.execute(
+                        "SELECT id, kategori FROM sozluk WHERE entity_type IS NULL OR entity_type = ''"
+                    ).fetchall()
+                    v5_rows = [
+                        (kat_map.get(s["kategori"], _ET.PERSON), s["id"])
+                        for s in sozluk_satirlari
+                        if s["kategori"]
+                    ]
+                    if v5_rows:
+                        conn.executemany(
+                            "UPDATE sozluk SET entity_type = ? WHERE id = ?",
+                            v5_rows,
+                        )
+                        logger.info(f"v5: {len(v5_rows)} sözlük kaydı entity_type'a migrate edildi.")
+                    else:
+                        logger.info("v5: entity_type migrasyonu gerekmedi (zaten dolu).")
+
+                # Migrasyon v5 → v6: sozluk_feedback tablosu oluştur
+                if mevcut_surum < 6:
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS sozluk_feedback (
+                            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                            seri_id          INTEGER NOT NULL,
+                            normalize_key    TEXT NOT NULL,
+                            entity_type      TEXT NOT NULL,
+                            aksiyon          TEXT NOT NULL,   -- 'onayla' | 'reddet' | 'birlestir'
+                            orijinal_confidence REAL DEFAULT 0.0,
+                            olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """)
+                    conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_feedback_seri_nk "
+                        "ON sozluk_feedback (seri_id, normalize_key)"
+                    )
+                    conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_feedback_seri_et "
+                        "ON sozluk_feedback (seri_id, entity_type)"
+                    )
+                    logger.info("v6: sozluk_feedback tablosu oluşturuldu.")
 
                 conn.execute(
                     "INSERT OR REPLACE INTO db_version (surumu) VALUES (?)",
@@ -789,6 +834,73 @@ class DatabaseManager:
 
         return eklenen
 
+    def oneri_birlesim_adayi_bul(self, seri_id: int, oneri_id: int) -> Optional[dict]:
+        """
+        Bir öneri için ana sözlükte normalize_key eşleşen (muhtemelen aynı terim)
+        kayıt varsa döndürür; yoksa None.
+        Kullanıcıya "Bu zaten X terimiyle aynı, birleştirmek ister misiniz?" sormak için.
+        """
+        from story_dict import _normalize_key as _nk
+        try:
+            with self._baglanti_ac() as conn:
+                oneri = conn.execute(
+                    "SELECT normalize_key, orijinal_terim FROM sozluk_oneri WHERE id = ?",
+                    (oneri_id,)
+                ).fetchone()
+                if not oneri:
+                    return None
+                nkey = oneri["normalize_key"] or _nk(oneri["orijinal_terim"])
+                # Ana sözlükte aynı normalize_key var mı?
+                eslesen = conn.execute(
+                    "SELECT * FROM sozluk WHERE seri_id = ? AND normalize_key = ?",
+                    (seri_id, nkey)
+                ).fetchone()
+                return dict(eslesen) if eslesen else None
+        except sqlite3.Error as hata:
+            logger.error(f"Birleşim adayı bulunamadı: {hata}")
+            return None
+
+    def oneri_birlestir(
+        self,
+        oneri_id: int,
+        hedef_id: int,
+        cevrilmis_terim: str,
+    ) -> bool:
+        """
+        Bir öneriyi mevcut bir sözlük girdisiyle birleştirir:
+        - Hedef girişin occurrence sayısını artırır.
+        - Öneriyi 'birlestirildi' durumuna getirir.
+        - Kullanıcı çevirisini hedef girişe yazar.
+        """
+        try:
+            with self._baglanti_ac() as conn:
+                oneri = conn.execute(
+                    "SELECT * FROM sozluk_oneri WHERE id = ?", (oneri_id,)
+                ).fetchone()
+                if not oneri:
+                    return False
+                oneri = dict(oneri)
+                occ = oneri.get("occurrences", 1)
+                conn.execute(
+                    """UPDATE sozluk
+                       SET occurrences = occurrences + ?,
+                           cevrilmis_terim = COALESCE(NULLIF(?, ''), cevrilmis_terim)
+                       WHERE id = ?""",
+                    (occ, cevrilmis_terim, hedef_id)
+                )
+                conn.execute(
+                    "UPDATE sozluk_oneri SET durum = 'birlestirildi' WHERE id = ?",
+                    (oneri_id,)
+                )
+                conn.commit()
+                logger.info(
+                    f"Öneri {oneri_id} → sözlük {hedef_id} ile birleştirildi."
+                )
+                return True
+        except sqlite3.Error as hata:
+            logger.error(f"Birleştirme başarısız: {hata}")
+            return False
+
     def onerileri_getir(self, seri_id: int) -> list:
         """Bekleyen önerileri döndürür."""
         try:
@@ -889,6 +1001,74 @@ class DatabaseManager:
             logger.error(f"Sözlük girişi güncellenemedi (id={girdi_id}): {hata}")
             return False
 
+    def sozluk_girisleri_toplu_kilitle(self, girdi_idler: list[int], kilitli: bool = True) -> int:
+        """Birden fazla sözlük girişini tek transaction ile kilitler/açar.
+        Döndürür: başarıyla güncellenen kayıt sayısı.
+        """
+        if not girdi_idler:
+            return 0
+        durum = "kilitli" if kilitli else "onaylandi"
+        try:
+            with self._baglanti_ac() as conn:
+                conn.executemany(
+                    "UPDATE sozluk SET locked = ?, oneri_durumu = ? WHERE id = ?",
+                    [(int(kilitli), durum, gid) for gid in girdi_idler],
+                )
+                conn.commit()
+                logger.info(f"Toplu kilit: {len(girdi_idler)} kayıt, kilitli={kilitli}.")
+                return len(girdi_idler)
+        except sqlite3.Error as hata:
+            logger.error(f"Toplu kilit hatası: {hata}")
+            return 0
+
+    def sozluk_girisleri_toplu_sil(self, girdi_idler: list[int]) -> int:
+        """Birden fazla sözlük girişini tek transaction ile siler.
+        Döndürür: silinen kayıt sayısı.
+        """
+        if not girdi_idler:
+            return 0
+        try:
+            with self._baglanti_ac() as conn:
+                yer_tutucu = ",".join("?" * len(girdi_idler))
+                conn.execute(
+                    f"DELETE FROM sozluk WHERE id IN ({yer_tutucu})",
+                    girdi_idler,
+                )
+                conn.commit()
+                logger.info(f"Toplu silme: {len(girdi_idler)} kayıt silindi.")
+                return len(girdi_idler)
+        except sqlite3.Error as hata:
+            logger.error(f"Toplu silme hatası: {hata}")
+            return 0
+
+    def sozluk_girisleri_toplu_entity_degistir(
+        self, girdi_idler: list[int], entity_type: str
+    ) -> int:
+        """Birden fazla sözlük girişinin entity_type ve kategori alanını değiştirir.
+        Döndürür: güncellenen kayıt sayısı.
+        """
+        if not girdi_idler:
+            return 0
+        from story_dict import EntityType as _ET
+        if not _ET.gecerli_mi(entity_type):
+            logger.error(f"Geçersiz entity_type: {entity_type}")
+            return 0
+        kategori = _ET.entity_den_kategori(entity_type)
+        try:
+            with self._baglanti_ac() as conn:
+                conn.executemany(
+                    "UPDATE sozluk SET entity_type = ?, kategori = ? WHERE id = ?",
+                    [(entity_type, kategori, gid) for gid in girdi_idler],
+                )
+                conn.commit()
+                logger.info(
+                    f"Toplu entity değiştirme: {len(girdi_idler)} kayıt → {entity_type}."
+                )
+                return len(girdi_idler)
+        except sqlite3.Error as hata:
+            logger.error(f"Toplu entity değiştirme hatası: {hata}")
+            return 0
+
     def sozluk_girisi_sil(self, girdi_id: int) -> bool:
         """Belirtilen sözlük girişini siler."""
         try:
@@ -901,6 +1081,70 @@ class DatabaseManager:
         except sqlite3.Error as hata:
             logger.error(f"Sözlük girişi silinemedi (id={girdi_id}): {hata}")
             return False
+
+    def feedback_kaydet(
+        self,
+        seri_id: int,
+        normalize_key: str,
+        entity_type: str,
+        aksiyon: str,
+        orijinal_confidence: float = 0.0,
+    ) -> bool:
+        """
+        Kullanıcı kararını (onayla/reddet/birlestir) feedback tablosuna kaydeder.
+        StoryDictionaryEngine bu geçmişi okuyarak confidence bonuslarını ayarlar.
+        """
+        try:
+            with self._baglanti_ac() as conn:
+                conn.execute(
+                    """INSERT INTO sozluk_feedback
+                           (seri_id, normalize_key, entity_type, aksiyon, orijinal_confidence)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (seri_id, normalize_key, entity_type, aksiyon, orijinal_confidence),
+                )
+                conn.commit()
+                return True
+        except sqlite3.Error as hata:
+            logger.error(f"Feedback kaydedilemedi: {hata}")
+            return False
+
+    def feedback_istatistikleri_getir(self, seri_id: int) -> dict:
+        """
+        Seri için entity_type bazında onayla/reddet oranlarını döndürür.
+        Döndürür:
+          {
+            "PERSON": {"onayla": 10, "reddet": 2, "red_orani": 0.17},
+            "SKILL":  {"onayla": 5,  "reddet": 8, "red_orani": 0.62},
+            ...
+          }
+        Bu istatistikler story_dict._extract_candidates() tarafından
+        confidence_bonus hesaplamak için kullanılır.
+        """
+        try:
+            with self._baglanti_ac() as conn:
+                satirlar = conn.execute(
+                    """SELECT entity_type, aksiyon, COUNT(*) as sayi
+                       FROM sozluk_feedback
+                       WHERE seri_id = ?
+                       GROUP BY entity_type, aksiyon""",
+                    (seri_id,)
+                ).fetchall()
+            sonuc: dict[str, dict] = {}
+            for s in satirlar:
+                et = s["entity_type"]
+                if et not in sonuc:
+                    sonuc[et] = {"onayla": 0, "reddet": 0}
+                if s["aksiyon"] in ("onayla", "birlestir"):
+                    sonuc[et]["onayla"] += s["sayi"]
+                elif s["aksiyon"] == "reddet":
+                    sonuc[et]["reddet"] += s["sayi"]
+            for et, v in sonuc.items():
+                toplam = v["onayla"] + v["reddet"]
+                v["red_orani"] = v["reddet"] / toplam if toplam > 0 else 0.0
+            return sonuc
+        except sqlite3.Error as hata:
+            logger.error(f"Feedback istatistikleri getirilemedi: {hata}")
+            return {}
 
     def metinde_sozluk_terimlerini_bul(self, seri_id: int, metin: str) -> list:
         """

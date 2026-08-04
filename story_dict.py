@@ -19,6 +19,18 @@ from typing import Dict, List, Optional, Tuple
 # =============================================================================
 
 class EntityType:
+    """
+    Uygulama genelinde tek kaynak doğruluk (single source of truth) entity tipi enum'u.
+
+    Kullanım:
+        from story_dict import EntityType
+        EntityType.PERSON              # → "PERSON"
+        EntityType.goruntu("PERSON")   # → "Karakter"
+        EntityType.renk("PERSON")      # → "#9b59d0"
+        EntityType.kategoriden("karakter")  # → "PERSON"
+        EntityType.entity_den_kategori("PERSON")  # → "karakter"
+    """
+
     PERSON       = "PERSON"
     LOCATION     = "LOCATION"
     ORGANIZATION = "ORGANIZATION"
@@ -34,6 +46,97 @@ class EntityType:
         PERSON, LOCATION, ORGANIZATION, TITLE,
         SKILL, ABILITY, ITEM, RACE, MONSTER, REALM,
     ]
+
+    # ── Görüntü adları (UI'de gösterilir) ─────────────────────────────────────
+    _GORUNUM: dict[str, str] = {
+        PERSON:       "Karakter",
+        LOCATION:     "Mekan",
+        ORGANIZATION: "Örgüt",
+        TITLE:        "Unvan",
+        SKILL:        "Beceri",
+        ABILITY:      "Yetenek",
+        ITEM:         "Eşya",
+        RACE:         "Irk",
+        MONSTER:      "Canavar",
+        REALM:        "Realm",
+    }
+
+    # ── Rozet renkleri (mor aksan tema) ────────────────────────────────────────
+    _RENK: dict[str, str] = {
+        PERSON:       "#9b59d0",
+        LOCATION:     "#a0f0b0",
+        ORGANIZATION: "#c9a8e8",
+        TITLE:        "#e8b86a",
+        SKILL:        "#f0d090",
+        ABILITY:      "#d0e060",
+        ITEM:         "#d8a880",
+        RACE:         "#80c8f0",
+        MONSTER:      "#f08080",
+        REALM:        "#a8d8e8",
+    }
+
+    # ── Eski "kategori" string → entity type (geriye dönük uyumluluk) ──────────
+    _KATEGORI_TO_ENTITY: dict[str, str] = {
+        "karakter": PERSON,
+        "mekan":    LOCATION,
+        "beceri":   SKILL,
+        "esya":     ITEM,
+        "sistem":   ORGANIZATION,
+        "diger":    PERSON,
+    }
+
+    # ── Entity type → eski "kategori" string ───────────────────────────────────
+    _ENTITY_TO_KATEGORI: dict[str, str] = {
+        PERSON:       "karakter",
+        LOCATION:     "mekan",
+        ORGANIZATION: "sistem",
+        TITLE:        "diger",
+        SKILL:        "beceri",
+        ABILITY:      "beceri",
+        ITEM:         "esya",
+        RACE:         "diger",
+        MONSTER:      "diger",
+        REALM:        "diger",
+    }
+
+    # ── Diyalog combobox için sıralı liste: (entity_type, goruntu_adi) ─────────
+    SECIM_LISTESI: list[tuple[str, str]] = [
+        (PERSON,       "Karakter"),
+        (LOCATION,     "Mekan"),
+        (SKILL,        "Beceri"),
+        (ABILITY,      "Yetenek"),
+        (ITEM,         "Eşya"),
+        (ORGANIZATION, "Örgüt"),
+        (TITLE,        "Unvan"),
+        (RACE,         "Irk"),
+        (MONSTER,      "Canavar"),
+        (REALM,        "Realm"),
+    ]
+
+    @classmethod
+    def goruntu(cls, entity_type: str) -> str:
+        """Entity type → kullanıcı dostu görüntü adı."""
+        return cls._GORUNUM.get(entity_type, entity_type)
+
+    @classmethod
+    def renk(cls, entity_type: str) -> str:
+        """Entity type → rozet hex rengi."""
+        return cls._RENK.get(entity_type, "#6b5a7a")
+
+    @classmethod
+    def kategoriden(cls, kategori: str) -> str:
+        """Eski kategori kodu → entity type. Bilinmiyorsa PERSON döner."""
+        return cls._KATEGORI_TO_ENTITY.get(kategori, cls.PERSON)
+
+    @classmethod
+    def entity_den_kategori(cls, entity_type: str) -> str:
+        """Entity type → eski kategori kodu. Bilinmiyorsa 'diger' döner."""
+        return cls._ENTITY_TO_KATEGORI.get(entity_type, "diger")
+
+    @classmethod
+    def gecerli_mi(cls, entity_type: str) -> bool:
+        """Verilen string geçerli bir entity type mı?"""
+        return entity_type in cls.ALL
 
 
 # =============================================================================
@@ -437,9 +540,14 @@ class StoryDictionaryEngine:
         text: str,
         bolum_no: int = 0,
         existing_entries: list[dict] | None = None,
+        feedback_istatistikleri: dict | None = None,
     ) -> dict:
         """
         Bir bölümü analiz eder; entity adaylarını döndürür.
+
+        Parametreler:
+          feedback_istatistikleri: db.feedback_istatistikleri_getir() çıktısı.
+            Verilirse sık reddedilen entity_type'ların confidence'ı azaltılır.
 
         Döndürür:
         {
@@ -469,17 +577,34 @@ class StoryDictionaryEngine:
             if not is_proper and freq < self.MIN_FREQUENCY:
                 continue
 
+            # ── Feedback bazlı confidence düzeltmesi ──────────────────────
+            # Kullanıcı bu entity_type'taki önerileri sık reddettiyse
+            # confidence'ı orantılı olarak düşür.
+            # red_orani >= 0.70 → ceza; red_orani <= 0.20 → bonus.
+            duzeltilmis_conf = conf
+            if feedback_istatistikleri and etype in feedback_istatistikleri:
+                ist = feedback_istatistikleri[etype]
+                red_orani = ist.get("red_orani", 0.0)
+                if red_orani >= 0.70:
+                    # Ağır ceza: %30'a kadar düşür
+                    duzeltilmis_conf = conf * (1.0 - (red_orani - 0.70) * 1.5)
+                elif red_orani <= 0.20 and ist.get("onayla", 0) >= 3:
+                    # Bonus: max %10 artış
+                    duzeltilmis_conf = min(conf * 1.10, 0.99)
+                duzeltilmis_conf = max(0.0, min(duzeltilmis_conf, 0.99))
+            # ─────────────────────────────────────────────────────────────
+
             entry_dict = {
                 "phrase":      phrase,
                 "entity_type": etype,
-                "confidence":  conf,
+                "confidence":  duzeltilmis_conf,
                 "frequency":   freq,
                 "bolum_no":    bolum_no,
             }
 
-            if conf >= self.CONFIDENCE_AUTO:
+            if duzeltilmis_conf >= self.CONFIDENCE_AUTO:
                 auto_save.append(entry_dict)
-            elif conf >= self.CONFIDENCE_SUGGEST:
+            elif duzeltilmis_conf >= self.CONFIDENCE_SUGGEST:
                 suggestions.append(entry_dict)
 
         return {

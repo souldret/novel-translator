@@ -16,6 +16,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QColor
 from icons import set_icon
 from story_dict import EntityType, StoryDictionaryEngine
+from quality_tools import sozluk_uyum_goster
 
 
 # =============================================================================
@@ -25,18 +26,10 @@ from story_dict import EntityType, StoryDictionaryEngine
 # Veritabanında saklanan kategori kod adları (eski uyumluluk)
 KATEGORI_KODLAR = ["karakter", "mekan", "beceri", "esya", "sistem", "diger"]
 
-# Kategori kodu → EntityType eşlemesi
-# SozlukGirdisiDialog'dan kayıt geldiğinde entity_type alanını doldurmak için kullanılır.
-KATEGORI_TO_ENTITY_TYPE = {
-    "karakter": "PERSON",
-    "mekan":    "LOCATION",
-    "beceri":   "SKILL",
-    "esya":     "ITEM",
-    "sistem":   "ORGANIZATION",
-    "diger":    "PERSON",
-}
+# Kategori kodu → EntityType eşlemesi — EntityType sınıfından alınır (tek kaynak doğruluk)
+KATEGORI_TO_ENTITY_TYPE = EntityType._KATEGORI_TO_ENTITY
 
-# Kullanıcıya gösterilen Türkçe karşılıkları
+# Kullanıcıya gösterilen Türkçe karşılıkları (eski kategori kodları)
 KATEGORI_GORUNUM = {
     "karakter": "Karakter",
     "mekan":    "Mekan",
@@ -46,41 +39,18 @@ KATEGORI_GORUNUM = {
     "diger":    "Diğer",
 }
 
-# Entity type → kullanıcı dostu ad
-ENTITY_GORUNUM = {
-    EntityType.PERSON:       "Karakter",
-    EntityType.LOCATION:     "Mekan",
-    EntityType.ORGANIZATION: "Örgüt",
-    EntityType.TITLE:        "Unvan",
-    EntityType.SKILL:        "Beceri",
-    EntityType.ABILITY:      "Yetenek",
-    EntityType.ITEM:         "Eşya",
-    EntityType.RACE:         "Irk",
-    EntityType.MONSTER:      "Canavar",
-    EntityType.REALM:        "Realm",
-}
+# Entity type → kullanıcı dostu ad — EntityType sınıfından (tek kaynak)
+ENTITY_GORUNUM  = EntityType._GORUNUM
+# Entity type → rozet rengi — EntityType sınıfından (tek kaynak)
+ENTITY_RENKLER  = EntityType._RENK
 
-# Entity type → rozet rengi
-ENTITY_RENKLER = {
-    EntityType.PERSON:       "#9b59d0",   # mor
-    EntityType.LOCATION:     "#a0f0b0",   # yeşil
-    EntityType.ORGANIZATION: "#c9a8e8",   # açık mor
-    EntityType.TITLE:        "#e8b86a",   # altın
-    EntityType.SKILL:        "#f0d090",   # sarı
-    EntityType.ABILITY:      "#d0e060",   # lime
-    EntityType.ITEM:         "#d8a880",   # turuncu
-    EntityType.RACE:         "#80c8f0",   # mavi
-    EntityType.MONSTER:      "#f08080",   # kırmızı
-    EntityType.REALM:        "#a8d8e8",   # açık mavi
-}
-
-# Her kategorinin rozet rengi (eski uyumluluk)
+# Her kategorinin rozet rengi (eski uyumluluk — EntityType._RENK üzerinden türetilir)
 KATEGORI_RENKLER = {
-    "karakter": "#9b59d0",
-    "mekan":    "#a0f0b0",
-    "beceri":   "#f0d090",
-    "esya":     "#d8a880",
-    "sistem":   "#c9a8e8",
+    "karakter": EntityType.renk(EntityType.PERSON),
+    "mekan":    EntityType.renk(EntityType.LOCATION),
+    "beceri":   EntityType.renk(EntityType.SKILL),
+    "esya":     EntityType.renk(EntityType.ITEM),
+    "sistem":   EntityType.renk(EntityType.ORGANIZATION),
     "diger":    "#6b5a7a",
 }
 
@@ -195,14 +165,11 @@ class SozlukGirdisiDialog(QDialog):
         self.cevrilmis_input.setPlaceholderText("Her zaman kullanılacak Türkçe karşılık...")
         form.addRow("Çevrilmiş Terim *", self.cevrilmis_input)
 
-        # Kategori ComboBox
+        # Entity Type ComboBox — EntityType.SECIM_LISTESI tek kaynak
         self.kategori_combo = QComboBox()
-        for kod in KATEGORI_KODLAR:
-            self.kategori_combo.addItem(
-                KATEGORI_GORUNUM[kod],   # görünen metin
-                userData=kod             # gizli veri: kod
-            )
-        form.addRow("Kategori", self.kategori_combo)
+        for et_kodu, et_adi in EntityType.SECIM_LISTESI:
+            self.kategori_combo.addItem(et_adi, userData=et_kodu)
+        form.addRow("Tür", self.kategori_combo)
 
         # Notlar
         self.notlar_input = QLineEdit()
@@ -277,9 +244,9 @@ class SozlukGirdisiDialog(QDialog):
         self.cevrilmis_input.setText(g.get("cevrilmis_terim", ""))
         self.notlar_input.setText(g.get("notlar", "") or "")
 
-        # Kategori seçimini eşleştir
-        kod = g.get("kategori", "diger")
-        idx = self.kategori_combo.findData(kod)
+        # entity_type tercih edilir; yoksa eski kategori alanından dönüştür
+        et = g.get("entity_type") or EntityType.kategoriden(g.get("kategori", "diger"))
+        idx = self.kategori_combo.findData(et)
         if idx >= 0:
             self.kategori_combo.setCurrentIndex(idx)
 
@@ -298,10 +265,12 @@ class SozlukGirdisiDialog(QDialog):
         self.hata_label.setVisible(False)
 
         # Sonuçları dışarıdan okunabilecek niteliklere ata
-        self.sonuc_orijinal  = orijinal
-        self.sonuc_cevrilmis = cevrilmis
-        self.sonuc_kategori  = self.kategori_combo.currentData()
-        self.sonuc_notlar    = self.notlar_input.text().strip() or None
+        self.sonuc_orijinal    = orijinal
+        self.sonuc_cevrilmis   = cevrilmis
+        # entity_type artık primary alan; kategori geriye uyumluluk için türetilir
+        self.sonuc_entity_type = self.kategori_combo.currentData()
+        self.sonuc_kategori    = EntityType.entity_den_kategori(self.sonuc_entity_type)
+        self.sonuc_notlar      = self.notlar_input.text().strip() or None
 
         self.accept()
 
@@ -323,6 +292,8 @@ class GlossaryWidget(QWidget):
 
         # Tabloda gösterilen terim kayıtları (dict listesi)
         self._terimler: list[dict] = []
+        # Uyum kontrolü için dışarıdan set edilen aktif bölüm çevirisi
+        self._aktif_bolum_metni: str = ""
 
         self._arayuz_olustur()
 
@@ -341,6 +312,11 @@ class GlossaryWidget(QWidget):
 
         # ── Üst araç çubuğu ───────────────────────────────────────────────
         ana_layout.addLayout(self._arac_cubugu_olustur())
+
+        # ── Toplu işlem çubuğu (seçim yapılınca görünür) ──────────────────
+        self._toplu_cubuk = self._toplu_cubuk_olustur()
+        self._toplu_cubuk.setVisible(False)
+        ana_layout.addWidget(self._toplu_cubuk)
 
         # ── Tab widget: Sözlük | Öneriler ─────────────────────────────────
         self.tab_widget = QTabWidget()
@@ -362,6 +338,8 @@ class GlossaryWidget(QWidget):
         sozluk_layout.setSpacing(0)
 
         self.tablo = self._tablo_olustur()
+        # Çoklu seçim değişince toplu işlem çubuğunu güncelle
+        self.tablo.itemSelectionChanged.connect(self._secim_degisti)
         sozluk_layout.addWidget(self.tablo, stretch=1)
 
         self.bos_durum_label = QLabel(
@@ -428,6 +406,17 @@ class GlossaryWidget(QWidget):
         set_icon(self.disaaktar_btn, "export", size=16)
         layout.addWidget(self.disaaktar_btn)
 
+        # Sözlük Uyum Kontrolü
+        self.uyum_btn = QPushButton("  Uyum Kontrolü")
+        self.uyum_btn.setFixedHeight(34)
+        self.uyum_btn.setStyleSheet(self._ikincil_buton_stili())
+        self.uyum_btn.setToolTip(
+            "Seçili/son çevrilen bölümde sözlük terimlerinin kullanılıp kullanılmadığını kontrol et"
+        )
+        self.uyum_btn.clicked.connect(self._uyum_kontrolu_ac)
+        set_icon(self.uyum_btn, "search", size=16)
+        layout.addWidget(self.uyum_btn)
+
         layout.addSpacing(12)
 
         # Terim sayacı
@@ -438,6 +427,80 @@ class GlossaryWidget(QWidget):
         layout.addWidget(self.sayac_label)
 
         return layout
+
+    def _toplu_cubuk_olustur(self) -> QWidget:
+        """Çoklu satır seçildiğinde beliren toplu işlem araç çubuğu."""
+        cubuk = QWidget()
+        cubuk.setStyleSheet(
+            "background: #1a1225; border: 1px solid #3d2d55; border-radius: 6px;"
+        )
+        layout = QHBoxLayout(cubuk)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(8)
+
+        self._secim_sayac = QLabel("0 satır seçili")
+        self._secim_sayac.setStyleSheet("color: #9b59d0; font-weight: 600; font-size: 12px;")
+        layout.addWidget(self._secim_sayac)
+
+        layout.addSpacing(12)
+
+        _btn_stili = """
+            QPushButton {
+                background: #2d1a40; color: #e8e0f0;
+                border: 1px solid #3d2d55; border-radius: 5px;
+                padding: 4px 12px; font-size: 12px;
+            }
+            QPushButton:hover { background: #3d2d55; border-color: #9b59d0; }
+        """
+
+        # Toplu kilitle
+        self._toplu_kilitle_btn = QPushButton("🔒 Kilitle")
+        self._toplu_kilitle_btn.setStyleSheet(_btn_stili)
+        self._toplu_kilitle_btn.setToolTip("Seçili terimleri kilitle (AI değiştiremez)")
+        self._toplu_kilitle_btn.clicked.connect(lambda: self._toplu_kilitle(True))
+        layout.addWidget(self._toplu_kilitle_btn)
+
+        # Toplu kilidi aç
+        self._toplu_ac_btn = QPushButton("🔓 Kilidi Aç")
+        self._toplu_ac_btn.setStyleSheet(_btn_stili)
+        self._toplu_ac_btn.setToolTip("Seçili terimlerin kilidini aç")
+        self._toplu_ac_btn.clicked.connect(lambda: self._toplu_kilitle(False))
+        layout.addWidget(self._toplu_ac_btn)
+
+        layout.addSpacing(4)
+
+        # Toplu entity değiştir
+        self._toplu_entity_combo = QComboBox()
+        self._toplu_entity_combo.setStyleSheet(
+            "background: #2d1a40; color: #e8e0f0; border: 1px solid #3d2d55;"
+            "border-radius: 5px; padding: 3px 8px; font-size: 12px;"
+        )
+        self._toplu_entity_combo.addItem("Türü Değiştir...", userData=None)
+        for et_kodu, et_adi in EntityType.SECIM_LISTESI:
+            self._toplu_entity_combo.addItem(et_adi, userData=et_kodu)
+        self._toplu_entity_combo.currentIndexChanged.connect(self._toplu_entity_degistir)
+        layout.addWidget(self._toplu_entity_combo)
+
+        layout.addSpacing(4)
+
+        # Toplu sil
+        self._toplu_sil_btn = QPushButton("🗑 Sil")
+        self._toplu_sil_btn.setStyleSheet(
+            _btn_stili.replace("#e8e0f0", "#f0a0b0").replace("#3d2d55", "#6a3a3a")
+        )
+        self._toplu_sil_btn.setToolTip("Seçili terimleri sil")
+        self._toplu_sil_btn.clicked.connect(self._toplu_sil)
+        layout.addWidget(self._toplu_sil_btn)
+
+        layout.addStretch()
+
+        # Seçimi temizle
+        temizle_btn = QPushButton("✕ Seçimi Temizle")
+        temizle_btn.setStyleSheet(_btn_stili)
+        temizle_btn.clicked.connect(self.tablo.clearSelection)
+        layout.addWidget(temizle_btn)
+
+        return cubuk
 
     def _oneri_sekmesi_olustur(self) -> QWidget:
         """Öneriler sekmesi widget'ını oluşturur."""
@@ -519,6 +582,8 @@ class GlossaryWidget(QWidget):
             QAbstractItemView.EditTrigger.EditKeyPressed
         )
         tablo.itemChanged.connect(self._inline_duzenleme_kaydedildi)
+        # Çoklu seçim: Ctrl+tık ile birden fazla satır seçilebilir
+        tablo.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         tablo.setAlternatingRowColors(True)
         tablo.verticalHeader().setVisible(False)
         tablo.horizontalHeader().setHighlightSections(False)
@@ -591,6 +656,13 @@ class GlossaryWidget(QWidget):
     # Geriye dönük uyumluluk için alias (main_window'da seri_yukle() çağrılıyor)
     def seri_yukle(self, seri_id: int):
         self.set_seri(seri_id)
+
+    def set_aktif_bolum_metni(self, cevrilmis_metin: str):
+        """
+        Ana pencereden aktif bölümün çevrilmiş metnini alır.
+        Sözlük uyum kontrolü bu metin üzerinde çalışır.
+        """
+        self._aktif_bolum_metni = cevrilmis_metin or ""
 
     def sozlugu_yukle(self):
         """
@@ -802,6 +874,86 @@ class GlossaryWidget(QWidget):
     # OTOMATİK TARAMA
     # =========================================================================
 
+    def _secili_terim_idleri(self) -> list[int]:
+        """Tabloda seçili satırların terim ID'lerini döndürür."""
+        secili_satirlar = {idx.row() for idx in self.tablo.selectedIndexes()}
+        idler = []
+        for satir in secili_satirlar:
+            no_item = self.tablo.item(satir, SUTUN_NO)
+            if no_item:
+                try:
+                    idler.append(int(no_item.data(Qt.ItemDataRole.UserRole)))
+                except (TypeError, ValueError):
+                    pass
+        return idler
+
+    def _secim_degisti(self):
+        """Tablo seçimi değişince toplu işlem çubuğunu göster/gizle."""
+        idler = self._secili_terim_idleri()
+        sayi = len(idler)
+        gorulur = sayi >= 2  # Tek seçim = normal, 2+ = toplu mod
+        self._toplu_cubuk.setVisible(gorulur)
+        if gorulur:
+            self._secim_sayac.setText(f"{sayi} satır seçili")
+            # Combo'yu "Türü Değiştir..." konumuna sıfırla
+            self._toplu_entity_combo.blockSignals(True)
+            self._toplu_entity_combo.setCurrentIndex(0)
+            self._toplu_entity_combo.blockSignals(False)
+
+    def _toplu_kilitle(self, kilitli: bool):
+        """Seçili terimleri toplu olarak kilitler/açar."""
+        idler = self._secili_terim_idleri()
+        if not idler:
+            return
+        n = self.db_manager.sozluk_girisleri_toplu_kilitle(idler, kilitli)
+        self.tablo.clearSelection()
+        self.sozlugu_yukle()
+
+    def _toplu_entity_degistir(self, idx: int):
+        """Combo'dan seçilen entity tipini seçili tüm terimlere uygular."""
+        if idx == 0:  # "Türü Değiştir..." placeholder
+            return
+        entity_type = self._toplu_entity_combo.itemData(idx)
+        if not entity_type:
+            return
+        idler = self._secili_terim_idleri()
+        if not idler:
+            return
+        et_adi = EntityType.goruntu(entity_type)
+        onay = QMessageBox.question(
+            self,
+            "Toplu Tür Değiştirme",
+            f"{len(idler)} terimin türü '{et_adi}' olarak değiştirilecek.\nDevam edilsin mi?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if onay == QMessageBox.StandardButton.Yes:
+            self.db_manager.sozluk_girisleri_toplu_entity_degistir(idler, entity_type)
+            self.tablo.clearSelection()
+            self.sozlugu_yukle()
+        else:
+            # İptal: combo'yu sıfırla
+            self._toplu_entity_combo.blockSignals(True)
+            self._toplu_entity_combo.setCurrentIndex(0)
+            self._toplu_entity_combo.blockSignals(False)
+
+    def _toplu_sil(self):
+        """Seçili terimleri onay alarak toplu siler."""
+        idler = self._secili_terim_idleri()
+        if not idler:
+            return
+        onay = QMessageBox.question(
+            self,
+            "Toplu Silme",
+            f"{len(idler)} terim silinecek. Bu işlem geri alınamaz.\nDevam edilsin mi?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if onay == QMessageBox.StandardButton.Yes:
+            self.db_manager.sozluk_girisleri_toplu_sil(idler)
+            self.tablo.clearSelection()
+            self.sozlugu_yukle()
+
     def _kilit_toggle(self, terim: dict):
         """Bir terimin kilit durumunu değiştirir."""
         girdi_id = terim["id"]
@@ -884,6 +1036,27 @@ class GlossaryWidget(QWidget):
         onayla_btn.clicked.connect(lambda _, oid=oneri_id, e=cev_edit: self._oneri_onayla(oid, e))
         layout.addWidget(onayla_btn)
 
+        # Birleştir (merge) — normalize_key çakışması varsa göster
+        birlesim_adayi = self.db_manager.oneri_birlesim_adayi_bul(self.seri_id, oneri_id)
+        if birlesim_adayi:
+            birlestir_btn = QPushButton("⇄ Birleştir")
+            birlestir_btn.setFixedHeight(28)
+            birlestir_btn.setToolTip(
+                f"Bu terim sözlükteki '{birlesim_adayi.get('orijinal_terim', '')}' "
+                f"ile aynı görünüyor — birleştir"
+            )
+            birlestir_btn.setStyleSheet("""
+                QPushButton { background: #1a2a3a; color: #80c8f0; border: 1px solid #3a6a8a;
+                              border-radius: 4px; padding: 2px 8px; font-weight: 600; font-size: 11px; }
+                QPushButton:hover { background: #2a4a5a; }
+            """)
+            birlestir_btn.clicked.connect(
+                lambda _, oid=oneri_id, hid=birlesim_adayi["id"],
+                e=cev_edit, ad=birlesim_adayi.get("orijinal_terim", ""):
+                    self._oneri_birlestir(oid, hid, ad, e)
+            )
+            layout.addWidget(birlestir_btn)
+
         # Reddet
         reddet_btn = QPushButton("✗")
         reddet_btn.setFixedSize(28, 28)
@@ -899,8 +1072,31 @@ class GlossaryWidget(QWidget):
         self._oneri_satirlari.append((oneri, cev_edit))
         return w
 
+    def _oneri_birlestir(
+        self, oneri_id: int, hedef_id: int, hedef_adi: str, cev_edit: QLineEdit
+    ):
+        """
+        Öneriyi mevcut bir sözlük girdisiyle birleştirir.
+        normalize_key çakışması tespit edildiğinde "⇄ Birleştir" butonu ile çağrılır.
+        """
+        onay = QMessageBox.question(
+            self,
+            "Terimi Birleştir",
+            f"Bu öneri sözlükteki '{hedef_adi}' terimiyle birleştirilecek.\n"
+            f"Occurrence sayısı artacak; çeviri alanı boşsa mevcut çeviri korunur.\n\n"
+            f"Devam edilsin mi?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if onay != QMessageBox.StandardButton.Yes:
+            return
+        ceviri = cev_edit.text().strip()  # Boş ise hedef çeviri korunur
+        self.db_manager.oneri_birlestir(oneri_id, hedef_id, ceviri)
+        self.sozlugu_yukle()
+        self._onerileri_yukle()
+
     def _oneri_onayla(self, oneri_id: int, cev_edit: QLineEdit):
-        """Tek öneriyi onaylar."""
+        """Tek öneriyi onaylar ve feedback kaydeder."""
         ceviri = cev_edit.text().strip()
         if not ceviri:
             cev_edit.setPlaceholderText("⚠ Çeviri gerekli!")
@@ -909,13 +1105,41 @@ class GlossaryWidget(QWidget):
                 "border-radius: 4px; padding: 2px 6px;"
             )
             return
+        # Feedback için meta bilgiyi önceden al
+        oneri_meta = next(
+            (o for o, _ in getattr(self, "_oneri_satirlari", []) if o["id"] == oneri_id),
+            None,
+        )
         self.db_manager.oneri_onayla(oneri_id, ceviri, locked=False)
+        # Feedback kaydet
+        if oneri_meta and self.seri_id:
+            from story_dict import _normalize_key as _nk
+            self.db_manager.feedback_kaydet(
+                seri_id=self.seri_id,
+                normalize_key=oneri_meta.get("normalize_key") or _nk(oneri_meta.get("orijinal_terim", "")),
+                entity_type=oneri_meta.get("entity_type", "PERSON"),
+                aksiyon="onayla",
+                orijinal_confidence=oneri_meta.get("confidence", 0.0),
+            )
         self.sozlugu_yukle()
         self._onerileri_yukle()
 
     def _oneri_reddet(self, oneri_id: int):
-        """Tek öneriyi reddeder."""
+        """Tek öneriyi reddeder ve feedback kaydeder."""
+        oneri_meta = next(
+            (o for o, _ in getattr(self, "_oneri_satirlari", []) if o["id"] == oneri_id),
+            None,
+        )
         self.db_manager.oneri_reddet(oneri_id)
+        if oneri_meta and self.seri_id:
+            from story_dict import _normalize_key as _nk
+            self.db_manager.feedback_kaydet(
+                seri_id=self.seri_id,
+                normalize_key=oneri_meta.get("normalize_key") or _nk(oneri_meta.get("orijinal_terim", "")),
+                entity_type=oneri_meta.get("entity_type", "PERSON"),
+                aksiyon="reddet",
+                orijinal_confidence=oneri_meta.get("confidence", 0.0),
+            )
         self._onerileri_yukle()
 
     def _tum_onerileri_onayla(self):
@@ -958,6 +1182,9 @@ class GlossaryWidget(QWidget):
         mevcut_terimler = self.db_manager.sozluk_terimlerini_getir(self.seri_id, sadece_onaylandi=False)
         engine = StoryDictionaryEngine(mevcut_terimler)
 
+        # Feedback istatistiklerini al — analyze_chapter confidence düzeltmesi için
+        feedback_ist = self.db_manager.feedback_istatistikleri_getir(self.seri_id)
+
         # Tüm bölümlerdeki adayları topla, sonunda tek transaction ile DB'ye yaz
         tum_adaylar: list[dict] = []
 
@@ -967,7 +1194,10 @@ class GlossaryWidget(QWidget):
                 continue
             bolum_no = bolum.get("bolum_no", 0) or 0
             # existing_entries verilmez: engine zaten yüklü, gereksiz reload önlenir
-            sonuc = engine.analyze_chapter(orijinal, bolum_no=bolum_no)
+            sonuc = engine.analyze_chapter(
+                orijinal, bolum_no=bolum_no,
+                feedback_istatistikleri=feedback_ist or None,
+            )
 
             for aday in sonuc["auto_save"] + sonuc["suggestions"]:
                 aday["bolum_no"] = bolum_no
@@ -1061,6 +1291,33 @@ class GlossaryWidget(QWidget):
     # =========================================================================
     # CSV İÇE / DIŞA AKTARMA
     # =========================================================================
+
+    def _uyum_kontrolu_ac(self):
+        """
+        Aktif bölümün çevrilmiş metni üzerinde sözlük uyum kontrolü yapar.
+        Hangi terimlerin çeviride eksik kaldığını SozlukUyumDiyalogu ile listeler.
+        """
+        if not self._terimler:
+            QMessageBox.information(
+                self, "Sözlük Boş",
+                "Kontrol edilecek sözlük terimi yok. Önce terim ekleyin."
+            )
+            return
+
+        if not self._aktif_bolum_metni.strip():
+            QMessageBox.information(
+                self, "Çeviri Metni Yok",
+                "Uyum kontrolü için bir bölümün çevrilmiş metnine ihtiyaç var.\n"
+                "Lütfen önce bir bölüm çevirin veya bölüm seçin."
+            )
+            return
+
+        # Sadece kilitli + onaylı terimleri kontrol et (önerileri hariç tut)
+        kontrol_terimleri = [
+            t for t in self._terimler
+            if t.get("oneri_durumu") in ("onaylandi", "kilitli")
+        ]
+        sozluk_uyum_goster(self, self._aktif_bolum_metni, kontrol_terimleri)
 
     def _csv_ice_aktar(self):
         """
