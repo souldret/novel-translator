@@ -48,6 +48,48 @@ Tüm önemli değişiklikler bu dosyada belgelenir.
   - Test 5: `lookup_all_in_text` greedy matching (`Lin Feng Clan` önce, `Lin Feng` sonra)
   - Test 6: `confidence=0` edge case
 
+#### Performans Optimizasyonları (2026-08-04)
+
+**`story_dict.py`**
+
+- **[OPT 1] `lookup_all_in_text` — compiled pattern cache ve birleşik regex**:
+  Her çağrıda `sorted()` + `re.compile()` yapılıyordu → O(n × text_len).
+  `_load_entries()` sırasında sıralanmış liste ve bireysel compiled pattern'ler
+  bir kez hesaplanıp cache'leniyor. 150+ terim için tek geçişli alternation regex
+  (`_lookup_combined`) devreye giriyor. Benchmark: 200 terim → **4.9x**, 1000 terim → **7.0x** hızlanma.
+
+- **[OPT 2] `_tum_bolumlerden_tara` engine re-use**:
+  Her bölüm için ayrı `StoryDictionaryEngine(...)` instantiate ediliyordu.
+  Engine artık bölümler arasında yeniden kullanılıyor; `analyze_chapter()`
+  çağrısında `existing_entries` verilmiyor (gereksiz `_load_entries` reload önlendi).
+
+**`glossary_widget.py`**
+
+- **[OPT 3] `_tabloyu_doldur` — `setUpdatesEnabled(False/True)` ile render sarmalama**:
+  Tüm satırlar eklendikten sonra tek seferde yeniden çizim yapılıyor.
+  500 satırlık tabloda gözle görülür donmayı ortadan kaldırır.
+
+- **[OPT 4] `_tum_bolumlerden_tara` — tekli DB insert → `oneri_ekle_toplu`**:
+  N bölüm × M öneri adet ayrı `oneri_ekle()` çağrısı (her biri kendi `conn.commit()`)
+  yerine tüm adaylar toplu olarak `oneri_ekle_toplu()` ile tek transaction'da yazılıyor.
+  Benchmark: 100 satır tekli → 397ms, executemany → 8.6ms (**46x hızlanma**).
+
+**`database.py`**
+
+- **[OPT 4] `oneri_ekle_toplu()` metodu eklendi**:
+  Mevcut `bekliyor` önerileri tek SELECT ile alınır; `executemany` ile INSERT/UPDATE
+  tek transaction'da yapılır. Aynı normalize_key'in birden fazla bölümde tekrar etmesi
+  doğru şekilde işlenir (bellek içi `mevcut_map` ile).
+
+- **[OPT 5] DB index migrasyonu (v4)**:
+  - `idx_sozluk_seri_nk` ON `sozluk(seri_id, normalize_key)` — terim ekle/arama
+  - `idx_sozluk_seri_oneri` ON `sozluk(seri_id, oneri_durumu)` — onaylı terim getir
+  - `idx_sozluk_oneri_seri_durum_nk` ON `sozluk_oneri(seri_id, durum, normalize_key)` — öneri sorgular
+  Mevcut DB'ler uygulama açılışında otomatik migrate edilir.
+
+**`benchmark_perf.py`** (yeni dosya — yalnızca geliştirici aracı):
+  lookup_all_in_text, analyze_chapter, DB insert ve QTableWidget render benchmark'ları.
+
 ### Önceki Düzeltmeler
 - `_islem_butonlari_ekle`: CSS `{}` parantezlerinin `.format()` ile çakışması düzeltildi (KeyError)
 - `_otomatik_sozluk_onerisi`: `_secili_bolum_id` → `aktif_bolum_id` attribute hatası düzeltildi

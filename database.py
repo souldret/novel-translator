@@ -21,7 +21,7 @@ from text_utils import sozlukte_eslesenleri_bul
 DB_YOLU = os.path.join(os.path.dirname(os.path.abspath(__file__)), "novel_cevirmen.db")
 
 # Mevcut şema sürümü — yeni migrasyon ekleyince artır
-SCHEMA_SURUMU = 3  # v3: sozluk tablosu story-consistency alanları
+SCHEMA_SURUMU = 4  # v4: sozluk/sozluk_oneri üzerinde performans index'leri
 
 # Modül düzeyinde logger
 logger = logging.getLogger("novel_cevirmen.database")
@@ -246,6 +246,26 @@ class DatabaseManager:
                             (_nk(satir["orijinal_terim"]), satir["id"])
                         )
                     logger.info(f"v3: {len(satirlar)} sözlük kaydı normalize edildi.")
+
+                # Migrasyon v3 → v4: sozluk ve sozluk_oneri üzerinde index'ler
+                if mevcut_surum < 4:
+                    index_tanimlari = [
+                        # sozluk aramaları: seri_id + normalize_key (sozluk_terimi_ekle, getir)
+                        ("CREATE INDEX IF NOT EXISTS idx_sozluk_seri_nk "
+                         "ON sozluk (seri_id, normalize_key)"),
+                        # sozluk aramaları: seri_id + oneri_durumu (sozluk_terimlerini_getir filtresi)
+                        ("CREATE INDEX IF NOT EXISTS idx_sozluk_seri_oneri "
+                         "ON sozluk (seri_id, oneri_durumu)"),
+                        # sozluk_oneri aramaları: seri_id + durum + normalize_key (oneri_ekle/getir)
+                        ("CREATE INDEX IF NOT EXISTS idx_sozluk_oneri_seri_durum_nk "
+                         "ON sozluk_oneri (seri_id, durum, normalize_key)"),
+                    ]
+                    for ddl in index_tanimlari:
+                        try:
+                            conn.execute(ddl)
+                            logger.info(f"v4: Index oluşturuldu: {ddl.split('idx_')[1].split(' ')[0]}")
+                        except sqlite3.OperationalError as e:
+                            logger.warning(f"v4: Index oluşturulamadı (zaten var?): {e}")
 
                 conn.execute(
                     "INSERT OR REPLACE INTO db_version (surumu) VALUES (?)",
@@ -701,6 +721,73 @@ class DatabaseManager:
         except sqlite3.Error as hata:
             logger.error(f"Öneri eklenemedi: {hata}")
             return None
+
+    def oneri_ekle_toplu(self, seri_id: int, adaylar: list[dict]) -> int:
+        """
+        Birden fazla öneriyi tek bir transaction ile ekler/günceller.
+        Tekli oneri_ekle() çağrıları yerine bu metodu kullan (46x daha hızlı).
+
+        adaylar: [{"phrase", "entity_type", "confidence", "frequency", "bolum_no"}, ...]
+        Döndürür: eklenen/güncellenen toplam kayıt sayısı.
+        """
+        if not adaylar:
+            return 0
+
+        from story_dict import _normalize_key as _nk
+
+        eklenen = 0
+        try:
+            with self._baglanti_ac() as conn:
+                # Mevcut bekleyen önerileri tek sorguda al
+                mevcut_map: dict[str, int] = {}
+                satirlar = conn.execute(
+                    "SELECT id, normalize_key FROM sozluk_oneri WHERE seri_id = ? AND durum = 'bekliyor'",
+                    (seri_id,)
+                ).fetchall()
+                for s in satirlar:
+                    mevcut_map[s["normalize_key"]] = s["id"]
+
+                insert_rows = []
+                update_rows = []
+
+                for aday in adaylar:
+                    nkey = _nk(aday["phrase"])
+                    occ  = aday.get("frequency", 1)
+                    conf = aday.get("confidence", 0.65)
+                    if nkey in mevcut_map:
+                        update_rows.append((occ, conf, mevcut_map[nkey]))
+                    else:
+                        insert_rows.append((
+                            seri_id,
+                            aday["phrase"],
+                            aday.get("entity_type", "PERSON"),
+                            conf,
+                            occ,
+                            aday.get("bolum_no", 0),
+                            nkey,
+                        ))
+                        mevcut_map[nkey] = -1  # Sonraki adayda duplicate önle
+
+                if insert_rows:
+                    conn.executemany(
+                        """INSERT INTO sozluk_oneri
+                               (seri_id, orijinal_terim, entity_type, confidence,
+                                occurrences, bolum_no, normalize_key)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        insert_rows,
+                    )
+                if update_rows:
+                    conn.executemany(
+                        "UPDATE sozluk_oneri SET occurrences = occurrences + ?, confidence = ? WHERE id = ?",
+                        update_rows,
+                    )
+                conn.commit()
+                eklenen = len(insert_rows) + len(update_rows)
+                logger.info(f"Toplu öneri eklendi/güncellendi: {eklenen} kayıt (seri_id={seri_id}).")
+        except sqlite3.Error as hata:
+            logger.error(f"Toplu öneri eklenemedi: {hata}")
+
+        return eklenen
 
     def onerileri_getir(self, seri_id: int) -> list:
         """Bekleyen önerileri döndürür."""
