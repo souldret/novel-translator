@@ -25,6 +25,17 @@ from story_dict import EntityType, StoryDictionaryEngine
 # Veritabanında saklanan kategori kod adları (eski uyumluluk)
 KATEGORI_KODLAR = ["karakter", "mekan", "beceri", "esya", "sistem", "diger"]
 
+# Kategori kodu → EntityType eşlemesi
+# SozlukGirdisiDialog'dan kayıt geldiğinde entity_type alanını doldurmak için kullanılır.
+KATEGORI_TO_ENTITY_TYPE = {
+    "karakter": "PERSON",
+    "mekan":    "LOCATION",
+    "beceri":   "SKILL",
+    "esya":     "ITEM",
+    "sistem":   "ORGANIZATION",
+    "diger":    "PERSON",
+}
+
 # Kullanıcıya gösterilen Türkçe karşılıkları
 KATEGORI_GORUNUM = {
     "karakter": "Karakter",
@@ -605,12 +616,17 @@ class GlossaryWidget(QWidget):
     def _tabloyu_temizle(self):
         """Tablodaki tüm satırları kaldırır."""
         self.tablo.setSortingEnabled(False)
+        self.tablo.blockSignals(True)
         self.tablo.setRowCount(0)
+        self.tablo.blockSignals(False)
         self.tablo.setSortingEnabled(True)
 
     def _tabloyu_doldur(self, terimler: list[dict]):
         """Verilen terim listesiyle tabloyu satır satır doldurur."""
         self.tablo.setSortingEnabled(False)
+        # Programatik setItem() çağrıları _inline_duzenleme_kaydedildi'yi
+        # tetiklemesini önlemek için sinyali geçici olarak kapat.
+        self.tablo.blockSignals(True)
         self.tablo.setRowCount(0)
 
         for sira, terim in enumerate(terimler):
@@ -663,8 +679,9 @@ class GlossaryWidget(QWidget):
             gecis_item.setFlags(gecis_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.tablo.setItem(sira, SUTUN_GECIS, gecis_item)
 
-            # Güven skoru
-            guven = terim.get("confidence", 1.0) or 1.0
+            # Güven skoru — None ise 1.0 kullan; 0.0 geçerli bir değerdir
+            _conf_raw = terim.get("confidence")
+            guven = 1.0 if _conf_raw is None else _conf_raw
             guven_item = QTableWidgetItem(f"{guven:.0%}")
             guven_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             if guven >= 0.80:
@@ -685,6 +702,7 @@ class GlossaryWidget(QWidget):
             # İşlem butonları
             self._islem_butonlari_ekle(sira, terim)
 
+        self.tablo.blockSignals(False)
         self.tablo.setSortingEnabled(True)
 
     def _islem_butonlari_ekle(self, satir: int, terim: dict):
@@ -1009,6 +1027,7 @@ class GlossaryWidget(QWidget):
                 orijinal_terim=diyalog.sonuc_orijinal,
                 cevrilmis_terim=diyalog.sonuc_cevrilmis,
                 kategori=diyalog.sonuc_kategori,
+                entity_type=KATEGORI_TO_ENTITY_TYPE.get(diyalog.sonuc_kategori, "PERSON"),
                 notlar=diyalog.sonuc_notlar,
             )
             self.sozlugu_yukle()
@@ -1024,6 +1043,7 @@ class GlossaryWidget(QWidget):
                 orijinal_terim=diyalog.sonuc_orijinal,
                 cevrilmis_terim=diyalog.sonuc_cevrilmis,
                 kategori=diyalog.sonuc_kategori,
+                entity_type=KATEGORI_TO_ENTITY_TYPE.get(diyalog.sonuc_kategori, "PERSON"),
                 notlar=diyalog.sonuc_notlar,
             )
             self.sozlugu_yukle()
@@ -1256,12 +1276,14 @@ class GlossaryWidget(QWidget):
         cevrilmis = _metin(SUTUN_CEVRILMIS)
         notlar    = _metin(SUTUN_NOTLAR) or None
 
-        # Kategori: hücrede sadece rozet widget'ı var, metin item'ı yok.
-        # Kategorik değeri _terimler listesinden terim_id ile bul.
-        kategori = "diger"
+        # Kategori ve entity_type: hücrede sadece rozet widget'ı var, metin item'ı yok.
+        # Mevcut değerleri _terimler listesinden terim_id ile bul.
+        kategori    = "diger"
+        entity_type = None
         for t in self._terimler:
             if t.get("id") == terim_id:
-                kategori = t.get("kategori", "diger")
+                kategori    = t.get("kategori", "diger")
+                entity_type = t.get("entity_type")
                 break
         if kategori not in KATEGORI_KODLAR:
             kategori = "diger"
@@ -1278,6 +1300,7 @@ class GlossaryWidget(QWidget):
                 orijinal_terim=orijinal,
                 cevrilmis_terim=cevrilmis,
                 kategori=kategori,
+                entity_type=entity_type,
                 notlar=notlar,
             )
         finally:

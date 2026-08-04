@@ -765,18 +765,35 @@ class DatabaseManager:
         orijinal_terim: str,
         cevrilmis_terim: str,
         kategori: str = "diger",
-        notlar: str = None
+        notlar: str = None,
+        entity_type: str = None,
     ) -> bool:
-        """Belirtilen sözlük girişini günceller. Kilitler (kullanıcı düzenlemesi)."""
+        """Belirtilen sözlük girişini günceller. Kilitler (kullanıcı düzenlemesi).
+        entity_type verilmezse mevcut değer korunur.
+        """
+        from story_dict import _normalize_key as _nk
+        nkey = _nk(orijinal_terim)
         try:
             with self._baglanti_ac() as conn:
-                conn.execute(
-                    """UPDATE sozluk
-                       SET orijinal_terim = ?, cevrilmis_terim = ?, kategori = ?,
-                           notlar = ?, locked = 1, oneri_durumu = 'kilitli'
-                       WHERE id = ?""",
-                    (orijinal_terim, cevrilmis_terim, kategori, notlar, girdi_id)
-                )
+                if entity_type is not None:
+                    conn.execute(
+                        """UPDATE sozluk
+                           SET orijinal_terim = ?, cevrilmis_terim = ?, kategori = ?,
+                               entity_type = ?, notlar = ?, normalize_key = ?,
+                               locked = 1, oneri_durumu = 'kilitli'
+                           WHERE id = ?""",
+                        (orijinal_terim, cevrilmis_terim, kategori,
+                         entity_type, notlar, nkey, girdi_id)
+                    )
+                else:
+                    conn.execute(
+                        """UPDATE sozluk
+                           SET orijinal_terim = ?, cevrilmis_terim = ?, kategori = ?,
+                               notlar = ?, normalize_key = ?,
+                               locked = 1, oneri_durumu = 'kilitli'
+                           WHERE id = ?""",
+                        (orijinal_terim, cevrilmis_terim, kategori, notlar, nkey, girdi_id)
+                    )
                 conn.commit()
                 logger.info(f"Sözlük girişi güncellendi ve kilitlendi (id={girdi_id}).")
                 return True
@@ -1054,11 +1071,12 @@ class DatabaseManager:
         orijinal_terim: str,
         cevrilmis_terim: str,
         kategori: str = "diger",
-        notlar: str = None
+        notlar: str = None,
+        entity_type: str = None,
     ) -> bool:
         """Alias: sozluk_girisi_guncelle"""
         return self.sozluk_girisi_guncelle(
-            girdi_id, orijinal_terim, cevrilmis_terim, kategori, notlar
+            girdi_id, orijinal_terim, cevrilmis_terim, kategori, notlar, entity_type
         )
 
     def sozluk_girdisi_sil(self, girdi_id: int) -> bool:
@@ -1108,10 +1126,11 @@ class DatabaseManager:
         cevrilmis_terim: str,
         kategori: str = "diger",
         notlar: str = None,
+        entity_type: str = None,
     ) -> bool:
         """Standart ad: sozluk_girisi_guncelle"""
         return self.sozluk_girisi_guncelle(
-            girdi_id, orijinal_terim, cevrilmis_terim, kategori, notlar
+            girdi_id, orijinal_terim, cevrilmis_terim, kategori, notlar, entity_type
         )
 
     def sozluk_terimi_sil(self, girdi_id: int) -> bool:

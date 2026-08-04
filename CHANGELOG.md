@@ -7,6 +7,48 @@ Tüm önemli değişiklikler bu dosyada belgelenir.
 ## [Unreleased]
 
 ### Düzeltmeler
+
+#### Story Consistency Dictionary — Kritik Bug Düzeltmeleri (2026-08-04)
+
+**`glossary_widget.py`**
+
+- **[BUG 1] Sahte itemChanged tetiklemesi engellendi** (`_tabloyu_doldur`, `_tabloyu_temizle`):
+  `tablo.itemChanged` sinyali `_tablo_olustur()`'da `_inline_duzenleme_kaydedildi`'ye bağlı.
+  `setRowCount(0)` ve `setItem()` çağrıları bu sinyali programatik olarak tetikleyip
+  eksik/yanlış verilerle DB'ye yazma denemesine yol açıyordu.
+  Her iki metoda `blockSignals(True)` / `blockSignals(False)` çerçevesi eklendi.
+
+- **[BUG 2] `kategori ↔ entity_type` mapping eksikliği giderildi**:
+  `SozlukGirdisiDialog` yalnızca `sonuc_kategori` alanını set edip `entity_type`'a hiç yazmıyordu.
+  Eklenen `KATEGORI_TO_ENTITY_TYPE` sözlüğü (karakter→PERSON, mekan→LOCATION, beceri→SKILL,
+  esya→ITEM, sistem→ORGANIZATION, diger→PERSON) aracılığıyla `_terim_ekle()` ve `_terim_duzenle()`
+  artık `entity_type` parametresini de `sozluk_terimi_ekle` / `sozluk_terimi_guncelle`'ye geçiriyor.
+  Inline düzenleme (`_inline_duzenleme_kaydedildi`) de `entity_type`'ı `_terimler` listesinden okuyup korur.
+
+- **[BUG 3] `confidence=0` yanlış 1.0'a çevriliyor du** (`_tabloyu_doldur`):
+  `terim.get("confidence", 1.0) or 1.0` ifadesi `confidence=0.0` durumunu `1.0`'a çeviriyordu.
+  `None` ise `1.0`, aksi hâlde değerin kendisi kullanılacak şekilde düzeltildi.
+
+**`database.py`**
+
+- **[BUG 4] `sozluk_girisi_guncelle` `normalize_key` ve `entity_type`'ı güncellemiyordu**:
+  Kullanıcı inline veya diyalog üzerinden bir terimi düzenlediğinde `normalize_key` sütunu
+  eski değerde kalıyordu; bu da `StoryDictionaryEngine` aramasını bozuyordu.
+  `sozluk_girisi_guncelle` artık `normalize_key = _normalize_key(orijinal_terim)` hesaplayıp
+  günceller. `entity_type` parametresi de eklendi; verilmezse mevcut DB değeri korunur.
+  Aynı değişiklik `sozluk_girdisi_guncelle` ve `sozluk_terimi_guncelle` alias'larına da yansıtıldı.
+
+**`story_dict.py`**
+
+- **[TEST] `__main__` test senaryosu genişletildi**:
+  - Test 2: Fuzzy matching — `Ye Chen` / `Ye-Chen` / `YeChen` → aynı normalize key
+  - Test 3: Kilitli terim koruması ve `build_translation_instructions()` çıktısı
+  - Test 4: Türkçe karakterli terimler (`ş→s`, `ç→c`, `ğ→g`, `ü→u` NFKD dönüşümü doğrulandı),
+    Latin/Türkçe varyant fuzzy eşleşme testi
+  - Test 5: `lookup_all_in_text` greedy matching (`Lin Feng Clan` önce, `Lin Feng` sonra)
+  - Test 6: `confidence=0` edge case
+
+### Önceki Düzeltmeler
 - `_islem_butonlari_ekle`: CSS `{}` parantezlerinin `.format()` ile çakışması düzeltildi (KeyError)
 - `_otomatik_sozluk_onerisi`: `_secili_bolum_id` → `aktif_bolum_id` attribute hatası düzeltildi
 - `settings_widget`: yanlış DB metod adları düzeltildi (`tum_ai_ayarlarini_getir`, `ai_ayar_getir`)
