@@ -1241,12 +1241,13 @@ class GlossaryWidget(QWidget):
         self._diyalog_stili_uygula(diyalog)
 
         if diyalog.exec() == QDialog.DialogCode.Accepted:
+            # sonuc_entity_type diyalog combobox'tan gelen gerçek değer (EntityType.SECIM_LISTESI)
             self.db_manager.sozluk_terimi_ekle(
                 seri_id=self.seri_id,
                 orijinal_terim=diyalog.sonuc_orijinal,
                 cevrilmis_terim=diyalog.sonuc_cevrilmis,
                 kategori=diyalog.sonuc_kategori,
-                entity_type=KATEGORI_TO_ENTITY_TYPE.get(diyalog.sonuc_kategori, "PERSON"),
+                entity_type=diyalog.sonuc_entity_type,
                 notlar=diyalog.sonuc_notlar,
             )
             self.sozlugu_yukle()
@@ -1257,12 +1258,13 @@ class GlossaryWidget(QWidget):
         self._diyalog_stili_uygula(diyalog)
 
         if diyalog.exec() == QDialog.DialogCode.Accepted:
+            # sonuc_entity_type diyalog combobox'tan gelen gerçek değer (EntityType.SECIM_LISTESI)
             self.db_manager.sozluk_terimi_guncelle(
                 girdi_id=terim["id"],
                 orijinal_terim=diyalog.sonuc_orijinal,
                 cevrilmis_terim=diyalog.sonuc_cevrilmis,
                 kategori=diyalog.sonuc_kategori,
-                entity_type=KATEGORI_TO_ENTITY_TYPE.get(diyalog.sonuc_kategori, "PERSON"),
+                entity_type=diyalog.sonuc_entity_type,
                 notlar=diyalog.sonuc_notlar,
             )
             self.sozlugu_yukle()
