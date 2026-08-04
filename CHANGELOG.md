@@ -48,6 +48,33 @@ Tüm önemli değişiklikler bu dosyada belgelenir.
   - Test 5: `lookup_all_in_text` greedy matching (`Lin Feng Clan` önce, `Lin Feng` sonra)
   - Test 6: `confidence=0` edge case
 
+#### Sözlük API Temizliği ve Kısayol Düzeltmeleri (2026-08-04)
+
+**`database.py`**
+
+- **`sozluk_girdisi_*` alias grubu kaldırıldı** (4 metot: `sozluk_girdisi_getir`, `sozluk_girdisi_olustur`, `sozluk_girdisi_guncelle`, `sozluk_girdisi_sil`). Doğru API: `sozluk_terimi_ekle` / `sozluk_terimi_guncelle` / `sozluk_terimi_sil` / `sozluk_terimlerini_getir`. Ölü kodun tamamen temizlendiği `_test_e2e_sozluk.py [I]` ile doğrulandı.
+
+**`chapters_widget.py`**
+
+- Test bloğundaki `sozluk_terimi_ekle` çağrıları `entity_type` parametresiyle güncellendi (Kirito/Asuna → PERSON, Aincrad → LOCATION).
+
+**`glossary_widget.py`**
+
+- `Ctrl+Shift+G` kısayolu (yardım menüsünde tanımlı ama bağlanmamış) artık `GlossaryWidget` içinde `QShortcut` ile `_uyum_kontrolu_ac`'a bağlandı.
+- `_terim_ekle` / `_terim_duzenle`: `KATEGORI_TO_ENTITY_TYPE.get(...)` yerine `diyalog.sonuc_entity_type` kullanıyor (doğrudan EntityType değeri).
+
+**`_test_e2e_sozluk.py`**
+
+- **[H]** Inline düzenleme simülasyonu: `sozluk_terimi_ekle` → `sozluk_girisi_guncelle` → çeviri/entity_type/normalize_key/locked doğrulaması.
+- **[I]** Ölü kod assertion: `sozluk_girdisi_*` metodlarının `DatabaseManager`'da artık olmadığını `hasattr` ile doğrular; herhangi biri kalırsa test patlar.
+
+**`quality_tools.py` — İnceleme Özeti**
+
+- `sozluk_uyum_goster(parent, ceviri, sozluk_terimleri)` → `SozlukUyumDiyalogu` diyaloğunu açar.
+- `text_utils.sozluk_uyum_kontrolu(ceviri, terimler)` fonksiyonunu çağırır; her kilitli/onaylı terimin çeviri metninde geçip geçmediğini kontrol eder.
+- `glossary_widget.py` bu fonksiyonu `_uyum_kontrolu_ac()` içinde kullanır; `_aktif_bolum_metni` ana pencereden `set_aktif_bolum_metni()` ile beslenir.
+- `Ctrl+Shift+G` kısayolu artık doğru şekilde bu akışı tetikliyor.
+
 #### Mimari Geliştirmeler — Story Consistency Dictionary v2 (2026-08-04)
 
 **Geliştirme 1 — EntityType tek kaynak doğruluk (story_dict.py + glossary_widget.py + database.py)**

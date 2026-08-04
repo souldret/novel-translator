@@ -2895,9 +2895,9 @@ if __name__ == "__main__":
 
     # Test sozlugu
     if not db.sozluk_terimlerini_getir(seri_id):
-        db.sozluk_terimi_ekle(seri_id, "Kirito",  "Kirito",  "karakter")
-        db.sozluk_terimi_ekle(seri_id, "Asuna",   "Asuna",   "karakter")
-        db.sozluk_terimi_ekle(seri_id, "Aincrad", "Aincrad", "mekan")
+        db.sozluk_terimi_ekle(seri_id, "Kirito",  "Kirito",  "karakter", entity_type="PERSON")
+        db.sozluk_terimi_ekle(seri_id, "Asuna",   "Asuna",   "karakter", entity_type="PERSON")
+        db.sozluk_terimi_ekle(seri_id, "Aincrad", "Aincrad", "mekan",    entity_type="LOCATION")
 
     widget = ChaptersWidget(seri_id=seri_id, db_manager=db, translator=None)
     widget.setWindowTitle("Bolumler Widget - Test")

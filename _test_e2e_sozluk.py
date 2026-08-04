@@ -300,6 +300,72 @@ for t in aktarilan[:3]:
     )
 print(f"    Aktarılan: {len(aktarilan)} terim, normalize_key hepsi dolu ve doğru")
 
+# ── h) Inline düzenleme simülasyonu + entity_type değişikliği ────────────────
+print("\n[H] Inline düzenleme akışı simülasyonu (sozluk_girisi_guncelle)")
+# sozluk_terimi_ekle ile bir terim ekle
+inline_id = db.sozluk_terimi_ekle(
+    seri_id=seri_id,
+    orijinal_terim="Azure Dragon Clan",
+    cevrilmis_terim="Mavi Ejder Klanı",
+    entity_type=EntityType.ORGANIZATION,
+)
+kontrol("Azure Dragon Clan eklendi", inline_id is not None)
+
+# Inline düzenleme akışı: sozluk_girisi_guncelle çağrısı
+# (glossary_widget._inline_duzenleme_kaydedildi'nin DB katmanındaki eşdeğeri)
+ok = db.sozluk_girisi_guncelle(
+    girdi_id=inline_id,
+    orijinal_terim="Azure Dragon Clan",
+    cevrilmis_terim="Gök Ejder Klanı",  # çeviri değişti
+    kategori="sistem",
+    entity_type=EntityType.ORGANIZATION,
+)
+kontrol("Inline düzenleme güncelleme başarılı", ok is True)
+
+# Değişikliği doğrula
+guncellendi = next(
+    (t for t in db.sozluk_terimlerini_getir(seri_id, sadece_onaylandi=False)
+     if t["id"] == inline_id),
+    None,
+)
+kontrol("Güncellenen terim sözlükte mevcut", guncellendi is not None)
+if guncellendi:
+    kontrol(
+        "Çeviri güncellendi: 'Gök Ejder Klanı'",
+        guncellendi["cevrilmis_terim"] == "Gök Ejder Klanı",
+    )
+    kontrol(
+        "entity_type ORGANIZATION olarak korundu",
+        guncellendi["entity_type"] == EntityType.ORGANIZATION,
+    )
+    kontrol(
+        "normalize_key güncellendi (sozluk_girisi_guncelle normalize_key yazar)",
+        guncellendi["normalize_key"] == _normalize_key("Azure Dragon Clan"),
+    )
+    kontrol(
+        "Inline düzenleme kilitlendi (locked=1)",
+        bool(guncellendi["locked"]),
+    )
+    print(f"    cevrilmis_terim={guncellendi['cevrilmis_terim']!r}  "
+          f"entity_type={guncellendi['entity_type']}  locked={guncellendi['locked']}")
+
+# ── i) Ölü kod (sozluk_girdisi_*) temizlenmiş mi? ────────────────────────────
+print("\n[I] Ölü kod kontrolü: sozluk_girdisi_* alias grubu kaldırıldı mı?")
+olu_metodlar = [
+    "sozluk_girdisi_getir",
+    "sozluk_girdisi_olustur",
+    "sozluk_girdisi_guncelle",
+    "sozluk_girdisi_sil",
+]
+from database import DatabaseManager as _DBM
+for metod_adi in olu_metodlar:
+    mevcut = hasattr(_DBM, metod_adi)
+    kontrol(
+        f"'{metod_adi}' artık DatabaseManager'da YOK",
+        not mevcut,
+    )
+print("    sozluk_girdisi_* alias grubu tamamen kaldırılmış: OK")
+
 # Temizlik
 os.unlink(tmp_db.name)
 os.unlink(csv_dosya.name)

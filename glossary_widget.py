@@ -13,7 +13,8 @@ from PyQt6.QtWidgets import (
     QGridLayout, QProgressBar
 )
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QFont, QColor, QKeySequence
+from PyQt6.QtWidgets import QShortcut as _QS  # noqa — sonra GlossaryWidget.__init__'te bağlanır
 from icons import set_icon
 from story_dict import EntityType, StoryDictionaryEngine
 from quality_tools import sozluk_uyum_goster
@@ -296,6 +297,10 @@ class GlossaryWidget(QWidget):
         self._aktif_bolum_metni: str = ""
 
         self._arayuz_olustur()
+
+        # Ctrl+Shift+G → Sözlük uyum kontrolü (yardım menüsünde tanımlı kısayol)
+        _kisayol = _QS(QKeySequence("Ctrl+Shift+G"), self)
+        _kisayol.activated.connect(self._uyum_kontrolu_ac)
 
         # Seri verilmişse hemen yükle
         if self.seri_id and self.db_manager:

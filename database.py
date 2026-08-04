@@ -1379,40 +1379,9 @@ class DatabaseManager:
     # glossary_widget.py eski isimleri kullanıyor; buradan yönlendiriliyor.
     # =========================================================================
 
-    def sozluk_girdisi_getir(self, seri_id: int) -> list:
-        """Alias: sozluk_terimlerini_getir"""
-        return self.sozluk_terimlerini_getir(seri_id)
-
-    def sozluk_girdisi_olustur(
-        self,
-        seri_id: int,
-        orijinal_terim: str,
-        cevrilmis_terim: str,
-        kategori: str = "diger",
-        notlar: str = None
-    ) -> Optional[int]:
-        """Alias: sozluk_terimi_ekle"""
-        return self.sozluk_terimi_ekle(
-            seri_id, orijinal_terim, cevrilmis_terim, kategori, notlar
-        )
-
-    def sozluk_girdisi_guncelle(
-        self,
-        girdi_id: int,
-        orijinal_terim: str,
-        cevrilmis_terim: str,
-        kategori: str = "diger",
-        notlar: str = None,
-        entity_type: str = None,
-    ) -> bool:
-        """Alias: sozluk_girisi_guncelle"""
-        return self.sozluk_girisi_guncelle(
-            girdi_id, orijinal_terim, cevrilmis_terim, kategori, notlar, entity_type
-        )
-
-    def sozluk_girdisi_sil(self, girdi_id: int) -> bool:
-        """Alias: sozluk_girisi_sil"""
-        return self.sozluk_girisi_sil(girdi_id)
+    # sozluk_girdisi_* alias grubu kaldırıldı (2026-08-04).
+    # Kullanılması gereken API: sozluk_terimi_ekle / sozluk_terimi_guncelle /
+    # sozluk_terimi_sil / sozluk_terimlerini_getir
 
     def metinde_terimleri_bul(self, seri_id: int, metin: str) -> list:
         """Alias: metinde_sozluk_terimlerini_bul"""
