@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Sanal ortam
+venv/
+.venv/
+env/
+
+# Veritabanı (kullanıcı verisi — repo'ya dahil edilmez)
+*.db
+*.db-shm
+*.db-wal
+*.db.*.bak
+
+# API anahtarları ve gizli dosyalar
+.env
+secrets.json
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+.DS_Store
+
+# PyInstaller çıktıları
+dist/
+build/
+*.spec.bak
+
+# Log dosyaları
+*.log
+logs/
