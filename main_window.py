@@ -1667,7 +1667,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Seri Seçilmedi", "Lütfen önce bir seri seçin.")
             return
         if _IMPORTERS_MEVCUT:
-            epub_disa_aktar(self.aktif_seri_id, self.db, self)
+            seri = self.db.seri_getir(self.aktif_seri_id)
+            seri_baslik = seri.get("baslik", "Roman") if seri else "Roman"
+            epub_disa_aktar(self.aktif_seri_id, self.db, seri_baslik, self)
         else:
             self._epub_disa_aktar_inline()
 
