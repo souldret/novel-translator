@@ -2838,18 +2838,17 @@ class ChaptersWidget(QWidget):
 
         sonuc = engine.analyze_chapter(orijinal_metin, bolum_no=bolum_no, existing_entries=mevcut)
 
-        eklenen = 0
-        for aday in sonuc["auto_save"] + sonuc["suggestions"]:
-            r = self.db_manager.oneri_ekle(
-                seri_id=self.seri_id,
-                orijinal_terim=aday["phrase"],
-                entity_type=aday["entity_type"],
-                confidence=aday["confidence"],
-                occurrences=aday["frequency"],
-                bolum_no=bolum_no,
-            )
-            if r:
-                eklenen += 1
+        adaylar = [
+            {
+                "phrase":      a["phrase"],
+                "entity_type": a["entity_type"],
+                "confidence":  a["confidence"],
+                "frequency":   a["frequency"],
+                "bolum_no":    bolum_no,
+            }
+            for a in sonuc["auto_save"] + sonuc["suggestions"]
+        ]
+        eklenen = self.db_manager.oneri_ekle_toplu(self.seri_id, adaylar) if adaylar else 0
 
         if eklenen:
             self._gecici_durum_goster(

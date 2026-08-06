@@ -38,6 +38,17 @@ except ImportError:
     _IMPORTERS_MEVCUT = False
 
 try:
+    from import_wizard import (
+        klasor_ice_aktar_ac,
+        coklu_klasor_ice_aktar_ac,
+        epub_toplu_ice_aktar_ac,
+        IceAktarmaSihirbazi,
+    )
+    _IMPORT_WIZARD_MEVCUT = True
+except ImportError:
+    _IMPORT_WIZARD_MEVCUT = False
+
+try:
     import plugin_loader as _plugin_loader
     _PLUGIN_LOADER_MEVCUT = True
 except ImportError:
@@ -526,6 +537,24 @@ class MainWindow(QMainWindow):
         epub_ice_action = QAction("EPUB İçe Aktar...", self)
         epub_ice_action.triggered.connect(self._epub_ice_aktar)
         dosya_menu.addAction(epub_ice_action)
+
+        dosya_menu.addSeparator()
+
+        # Klasör bazlı içe aktar (2.1)
+        klasor_aktar_action = QAction("Klasörden İçe Aktar...", self)
+        klasor_aktar_action.setShortcut("Ctrl+Shift+I")
+        klasor_aktar_action.triggered.connect(self._klasor_ice_aktar)
+        dosya_menu.addAction(klasor_aktar_action)
+
+        # Çoklu klasör / çoklu seri (2.2)
+        coklu_klasor_action = QAction("Çoklu Klasör İçe Aktar...", self)
+        coklu_klasor_action.triggered.connect(self._coklu_klasor_ice_aktar)
+        dosya_menu.addAction(coklu_klasor_action)
+
+        # Çoklu EPUB (2.4)
+        epub_toplu_action = QAction("Çoklu EPUB İçe Aktar...", self)
+        epub_toplu_action.triggered.connect(self._epub_toplu_ice_aktar)
+        dosya_menu.addAction(epub_toplu_action)
 
         dosya_menu.addSeparator()
 
@@ -1792,6 +1821,65 @@ class MainWindow(QMainWindow):
 
         except Exception as hata:
             QMessageBox.critical(self, "EPUB Hatası", f"EPUB oluşturulamadı:\n{hata}")
+
+    # =========================================================================
+    # KLASÖR / TOPLU İÇE AKTARIM (import_wizard.py)
+    # =========================================================================
+
+    def _klasor_ice_aktar(self):
+        """Klasör bazlı TXT içe aktarma sihirbazını açar (Bölüm 2.1)."""
+        if not self.aktif_seri_id:
+            QMessageBox.warning(self, "Seri Seçilmedi", "Lütfen önce bir seri seçin.")
+            return
+        if not _IMPORT_WIZARD_MEVCUT:
+            QMessageBox.warning(self, "Modül Eksik", "import_wizard.py bulunamadı.")
+            return
+        translator = getattr(getattr(self, "chapters_widget", None), "translator", None)
+        dlg = IceAktarmaSihirbazi(
+            db_manager=self.db,
+            translator=translator,
+            mod="klasor",
+            baslangic_seri_id=self.aktif_seri_id,
+            parent=self,
+        )
+        dlg.seri_guncellendi.connect(lambda sid: (
+            self._serileri_yukle(),
+            self.chapters_widget.set_seri(sid) if self.chapters_widget else None,
+        ))
+        dlg.exec()
+
+    def _coklu_klasor_ice_aktar(self):
+        """Çoklu klasör / çoklu seri içe aktarma sihirbazını açar (Bölüm 2.2)."""
+        if not _IMPORT_WIZARD_MEVCUT:
+            QMessageBox.warning(self, "Modül Eksik", "import_wizard.py bulunamadı.")
+            return
+        translator = getattr(getattr(self, "chapters_widget", None), "translator", None)
+        dlg = IceAktarmaSihirbazi(
+            db_manager=self.db,
+            translator=translator,
+            mod="coklu_klasor",
+            parent=self,
+        )
+        dlg.seri_guncellendi.connect(lambda sid: self._serileri_yukle())
+        dlg.exec()
+
+    def _epub_toplu_ice_aktar(self):
+        """Çoklu EPUB içe aktarma sihirbazını açar (Bölüm 2.4)."""
+        if not _IMPORT_WIZARD_MEVCUT:
+            QMessageBox.warning(self, "Modül Eksik", "import_wizard.py bulunamadı.")
+            return
+        translator = getattr(getattr(self, "chapters_widget", None), "translator", None)
+        dlg = IceAktarmaSihirbazi(
+            db_manager=self.db,
+            translator=translator,
+            mod="epub_toplu",
+            parent=self,
+        )
+        dlg.seri_guncellendi.connect(lambda sid: (
+            self._serileri_yukle(),
+            self.chapters_widget.set_seri(sid) if self.chapters_widget else None,
+        ))
+        dlg.exec()
 
     # =========================================================================
     # SERİ OLUŞTURMA SİHİRBAZI

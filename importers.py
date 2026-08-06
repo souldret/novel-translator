@@ -3,6 +3,7 @@ Novel Çevirmen - İçe/Dışa Aktarım Fonksiyonları
 TXT ve EPUB formatlarında içe ve dışa aktarım işlemleri.
 """
 
+import hashlib
 import os
 import re
 
@@ -20,22 +21,83 @@ except ImportError:
 
 _VARSAYILAN_KODLAMALAR = ("utf-8-sig", "utf-8", "cp1254", "latin-1")
 
+# Encoding tespiti için okunacak maksimum bayt miktarı (64 KB yeterli)
+_ENCODING_ORNEK_BOYUTU = 65536
+
+
+# =============================================================================
+# DOĞAL SIRALAMA — sayısal farkındalıklı dosya sıralaması
+# =============================================================================
+
+# Dosya adından bölüm numarası çıkarmak için alternatif regex kalıpları
+# (öncelik sırasına göre; ilk eşleşen kullanılır)
+_BOLUM_NO_KALIPLARI = [
+    # "Bölüm 12 - Başlık.txt", "Chapter 012.txt", "볼룸 3.txt" vb.
+    re.compile(r'(?:b[oö]l[uü]m|chapter|ch|bap|kısım|part|ep(?:isode)?)'
+               r'\s*[._\-]?\s*(\d+)', re.IGNORECASE),
+    # "012.txt", "012 - Başlık.txt" gibi saf sayı
+    re.compile(r'^(\d+)'),
+    # Sondaki sayı: "Başlık 3.txt"
+    re.compile(r'(\d+)\s*$'),
+    # Herhangi bir yerdeki sayı
+    re.compile(r'(\d+)'),
+]
+
+
+def dosya_adından_bolum_no(dosya_adi: str) -> tuple[int, str]:
+    """
+    Dosya adından (uzantısız) bölüm numarası ve başlık çıkarır.
+
+    Döndürür:
+        (bolum_no, baslik)
+        Numara bulunamazsa bolum_no=9999 (alfabetik sonuna düşer).
+    """
+    kok = os.path.splitext(os.path.basename(dosya_adi))[0]
+    for kalip in _BOLUM_NO_KALIPLARI:
+        m = kalip.search(kok)
+        if m:
+            no = int(m.group(1))
+            # Başlığı temizle: numarayı, ayırıcıları ve "Bölüm/Chapter" öncesini sil
+            baslik = kalip.sub("", kok).strip(" -_.")
+            # Kalan tire/alt çizgi ayırıcıları boşluğa çevir
+            baslik = re.sub(r'[\-_]+', ' ', baslik).strip()
+            return no, baslik if baslik else kok
+    return 9999, kok
+
+
+def dogal_sirala(dosyalar: list[str]) -> list[str]:
+    """
+    Dosya yollarını bölüm numarasına göre doğal (numeric-aware) sıralar.
+    Numara bulunamazsa alfabetik sıraya düşer.
+    """
+    return sorted(dosyalar, key=lambda p: dosya_adından_bolum_no(p))
+
+
+def _icerik_hash(icerik: str) -> str:
+    """İçerik karması (mükerrer tespiti için)."""
+    return hashlib.md5(icerik.encode("utf-8", errors="replace")).hexdigest()
+
 
 def _dosya_icerigini_oku(dosya_yolu: str) -> str | None:
     """
     Verilen dosyayı uygun kodlamayla okur ve içeriği döner.
-    chardet yüklüyse önce otomatik tespit dener; başarısız olursa
+    chardet yüklüyse dosyanın ilk 64 KB'ından örnekleme yaparak encoding
+    tespiti yapar (büyük dosyalarda performans için); başarısız olursa
     sabit kodlama listesini dener. Hiçbiri işe yaramazsa None döner.
     """
     if _CHARDET_MEVCUT:
         try:
             with open(dosya_yolu, "rb") as fb:
-                ham = fb.read()
-            tespit = _chardet.detect(ham)
+                ornek = fb.read(_ENCODING_ORNEK_BOYUTU)
+            tespit = _chardet.detect(ornek)
             enc = tespit.get("encoding") or "utf-8"
-            return ham.decode(enc, errors="replace").strip()
+            # Tam dosyayı seçilen kodlamayla oku
+            with open(dosya_yolu, encoding=enc, errors="replace") as f:
+                return f.read().strip()
+        except (FileNotFoundError, PermissionError, OSError):
+            return None
         except Exception:
-            pass  # Hata olursa sabit listeye düş
+            pass  # Encoding hatası → sabit listeye düş
 
     for enc in _VARSAYILAN_KODLAMALAR:
         try:
@@ -43,6 +105,8 @@ def _dosya_icerigini_oku(dosya_yolu: str) -> str | None:
                 return f.read().strip()
         except UnicodeDecodeError:
             continue
+        except (FileNotFoundError, PermissionError, OSError):
+            return None
     return None
 
 
@@ -59,6 +123,9 @@ def txt_bolum_ice_aktar(
     Kullanıcıdan bir veya daha fazla TXT dosyası seçmesini ister,
     her dosyayı verilen seriye yeni bölüm olarak ekler.
 
+    - Doğal sıralama (numeric-aware) uygulanır.
+    - İçerik hash'i ile mükerrer bölüm kontrolü yapılır.
+
     Returns:
         Eklenen bölüm sayısı (0 dahil).
     """
@@ -73,28 +140,50 @@ def txt_bolum_ice_aktar(
 
     mevcut_bolumler = db_manager.serinin_bolumlerini_getir(seri_id)
     sonraki_no = max((b.get("bolum_no", 0) for b in mevcut_bolumler), default=0) + 1
-    eklenen = 0
 
-    for dosya in sorted(dosyalar):
+    # Mükerrer tespiti: mevcut bölümlerin içerik hash'leri
+    mevcut_hashler: set[str] = set()
+    for b in mevcut_bolumler:
+        icerik = (b.get("orijinal_metin") or "").strip()
+        if icerik:
+            mevcut_hashler.add(_icerik_hash(icerik))
+
+    eklenen = 0
+    atlanan = 0
+
+    for dosya in dogal_sirala(dosyalar):
         icerik = _dosya_icerigini_oku(dosya)
         if not icerik:
             continue
 
-        baslik = os.path.splitext(os.path.basename(dosya))[0]
+        # Mükerrer kontrolü
+        h = _icerik_hash(icerik)
+        if h in mevcut_hashler:
+            atlanan += 1
+            continue
+
+        _bolum_no, baslik = dosya_adından_bolum_no(dosya)
         db_manager.bolum_olustur(
             seri_id=seri_id,
             bolum_no=sonraki_no,
             bolum_baslik=baslik,
             orijinal_metin=icerik,
         )
+        mevcut_hashler.add(h)
         sonraki_no += 1
         eklenen += 1
 
+    mesaj_parcalari = []
     if eklenen:
+        mesaj_parcalari.append(f"{eklenen} bölüm başarıyla eklendi.")
+    if atlanan:
+        mesaj_parcalari.append(f"{atlanan} bölüm zaten mevcut olduğu için atlandı.")
+
+    if mesaj_parcalari:
         QMessageBox.information(
             parent_widget,
             "İçe Aktarım",
-            f"{eklenen} bölüm başarıyla eklendi.",
+            "\n".join(mesaj_parcalari),
         )
 
     return eklenen
@@ -104,6 +193,129 @@ def txt_bolum_ice_aktar(
 # EPUB İÇE AKTARIM
 # =============================================================================
 
+def _epub_opf_yolu_bul(epub_zip) -> str | None:
+    """
+    META-INF/container.xml dosyasından OPF dosyasının yolunu okur.
+    Bulunamazsa None döner.
+    """
+    try:
+        container_xml = epub_zip.read("META-INF/container.xml").decode("utf-8", errors="replace")
+        m = re.search(r'full-path=["\']([^"\']+\.opf)["\']', container_xml, re.IGNORECASE)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return None
+
+
+def _epub_spine_sirasi(epub_zip, opf_yolu: str) -> list[str] | None:
+    """
+    OPF dosyasındaki <spine> sırasına göre içerik dosyalarının tam yollarını döner.
+    Başarısız olursa None döner (fallback için).
+    """
+    try:
+        opf_icerik = epub_zip.read(opf_yolu).decode("utf-8", errors="replace")
+        opf_klasor = opf_yolu.rsplit("/", 1)[0] + "/" if "/" in opf_yolu else ""
+
+        # manifest: id → href eşleşmesi
+        manifest: dict[str, str] = {}
+        for m in re.finditer(
+            r'<item\b[^>]*\bid=["\']([^"\']+)["\'][^>]*\bhref=["\']([^"\']+)["\']',
+            opf_icerik, re.IGNORECASE
+        ):
+            manifest[m.group(1)] = m.group(2)
+        # href → id yönünde de ara (attr sırası farklı olabilir)
+        for m in re.finditer(
+            r'<item\b[^>]*\bhref=["\']([^"\']+)["\'][^>]*\bid=["\']([^"\']+)["\']',
+            opf_icerik, re.IGNORECASE
+        ):
+            manifest[m.group(2)] = m.group(1)  # id→href yönü doğru değil; tekrar düzelt
+        # Doğrudan id→href haritası kur
+        id_to_href: dict[str, str] = {}
+        for m in re.finditer(
+            r'<item\b([^>]+)>', opf_icerik, re.IGNORECASE
+        ):
+            attrs_str = m.group(1)
+            id_m   = re.search(r'\bid=["\']([^"\']+)["\']', attrs_str)
+            href_m = re.search(r'\bhref=["\']([^"\']+)["\']', attrs_str)
+            if id_m and href_m:
+                id_to_href[id_m.group(1)] = href_m.group(1)
+
+        # spine: idref sırası
+        spine_kismi = re.search(r'<spine\b[^>]*>(.*?)</spine>', opf_icerik, re.DOTALL | re.IGNORECASE)
+        if not spine_kismi:
+            return None
+
+        siradaki: list[str] = []
+        for m in re.finditer(r'<itemref\b[^>]*\bidref=["\']([^"\']+)["\']', spine_kismi.group(1), re.IGNORECASE):
+            idref = m.group(1)
+            href = id_to_href.get(idref)
+            if href:
+                # OPF klasörüne göreli yolu mutlaklaştır
+                tam_yol = opf_klasor + href if not href.startswith("/") else href.lstrip("/")
+                siradaki.append(tam_yol)
+
+        return siradaki if siradaki else None
+    except Exception:
+        return None
+
+
+def _epub_icerik_dosyalari_bul(epub_zip) -> list[str]:
+    """
+    EPUB içindeki içerik (bölüm) dosyalarını spine sırasıyla döner.
+    OPF/spine okunamazsa dosya adına göre fallback kullanır.
+    """
+    opf_yolu = _epub_opf_yolu_bul(epub_zip)
+    if opf_yolu:
+        spine = _epub_spine_sirasi(epub_zip, opf_yolu)
+        if spine:
+            # ZIP içinde gerçekten var olan dosyaları filtrele
+            mevcut = set(epub_zip.namelist())
+            return [p for p in spine if p in mevcut]
+
+    # Fallback: dosya adı bazlı filtreleme (eski davranış)
+    return sorted([
+        n for n in epub_zip.namelist()
+        if n.endswith((".html", ".xhtml", ".htm"))
+        and "toc" not in n.lower()
+        and "nav" not in n.lower()
+        and "ncx" not in n.lower()
+    ])
+
+
+class _HtmlMetinCikartici:
+    """Basit HTML → düz metin dönüştürücü (html.parser tabanlı)."""
+    from html.parser import HTMLParser as _HP
+
+    class _Parser(_HP):
+        def __init__(self):
+            super().__init__()
+            self.metin_parcalari: list[str] = []
+            self._atla = False
+
+        def handle_starttag(self, tag, attrs):
+            if tag in ("script", "style", "head"):
+                self._atla = True
+
+        def handle_endtag(self, tag):
+            if tag in ("script", "style", "head"):
+                self._atla = False
+            if tag in ("p", "div", "br", "h1", "h2", "h3", "h4"):
+                self.metin_parcalari.append("\n")
+
+        def handle_data(self, data):
+            if not self._atla:
+                self.metin_parcalari.append(data)
+
+    @classmethod
+    def cevir(cls, html_str: str) -> str:
+        p = cls._Parser()
+        p.feed(html_str)
+        satirlar = "".join(p.metin_parcalari).splitlines()
+        temiz = [s.strip() for s in satirlar if s.strip()]
+        return "\n\n".join(temiz)
+
+
 def epub_ice_aktar(
     seri_id: int,
     db_manager: DatabaseManager,
@@ -112,6 +324,10 @@ def epub_ice_aktar(
     """
     Kullanıcıdan bir EPUB dosyası seçmesini ister, içindeki HTML/XHTML
     bölümlerini ayrıştırarak verilen seriye yeni bölümler olarak ekler.
+
+    - OPF/spine sırası kullanılır (kırılgan dosya adı sıralaması yerine).
+    - İçerik hash'i ile mükerrer bölüm kontrolü yapılır.
+    - Atlanan dosyalar kullanıcıya raporlanır.
 
     Returns:
         Eklenen bölüm sayısı (0 dahil).
@@ -127,55 +343,38 @@ def epub_ice_aktar(
 
     try:
         import zipfile
-        from html.parser import HTMLParser
-
-        class _HtmlMetinCikartici(HTMLParser):
-            def __init__(self):
-                super().__init__()
-                self.metin_parcalari = []
-                self._atla = False
-
-            def handle_starttag(self, tag, attrs):
-                if tag in ("script", "style", "head"):
-                    self._atla = True
-
-            def handle_endtag(self, tag):
-                if tag in ("script", "style", "head"):
-                    self._atla = False
-                if tag in ("p", "div", "br", "h1", "h2", "h3", "h4"):
-                    self.metin_parcalari.append("\n")
-
-            def handle_data(self, data):
-                if not self._atla:
-                    self.metin_parcalari.append(data)
-
-        def _html_den_metin(html_str: str) -> str:
-            p = _HtmlMetinCikartici()
-            p.feed(html_str)
-            satirlar = "".join(p.metin_parcalari).splitlines()
-            temiz = [s.strip() for s in satirlar if s.strip()]
-            return "\n\n".join(temiz)
 
         eklenen = 0
+        atlanan_hashler = 0
+        atlanalar: list[tuple[str, str]] = []   # [(dosya_adi, neden)]
+
         mevcut = db_manager.serinin_bolumlerini_getir(seri_id)
         sonraki_no = max((b.get("bolum_no", 0) for b in mevcut), default=0) + 1
 
+        mevcut_hashler: set[str] = set()
+        for b in mevcut:
+            ic = (b.get("orijinal_metin") or "").strip()
+            if ic:
+                mevcut_hashler.add(_icerik_hash(ic))
+
         with zipfile.ZipFile(dosya, "r") as epub:
-            icerik_dosyalari = sorted([
-                n for n in epub.namelist()
-                if n.endswith((".html", ".xhtml", ".htm"))
-                and "toc" not in n.lower()
-                and "nav" not in n.lower()
-                and "ncx" not in n.lower()
-            ])
+            icerik_dosyalari = _epub_icerik_dosyalari_bul(epub)
 
             for dosya_adi in icerik_dosyalari:
                 try:
                     html_bytes = epub.read(dosya_adi)
                     html_str = html_bytes.decode("utf-8", errors="replace")
-                    metin = _html_den_metin(html_str)
+                    metin = _HtmlMetinCikartici.cevir(html_str)
                     if len(metin.strip()) < 50:
-                        continue  # Çok kısa — bölüm değil
+                        atlanalar.append((dosya_adi, "çok kısa içerik (<50 karakter)"))
+                        continue
+
+                    h = _icerik_hash(metin)
+                    if h in mevcut_hashler:
+                        atlanan_hashler += 1
+                        atlanalar.append((dosya_adi, "zaten mevcut (mükerrer)"))
+                        continue
+
                     baslik = os.path.splitext(os.path.basename(dosya_adi))[0]
                     baslik = re.sub(r"[-_]", " ", baslik).title()
                     db_manager.bolum_olustur(
@@ -184,22 +383,38 @@ def epub_ice_aktar(
                         bolum_baslik=baslik,
                         orijinal_metin=metin,
                     )
+                    mevcut_hashler.add(h)
                     sonraki_no += 1
                     eklenen += 1
-                except Exception:
-                    continue
+                except Exception as dosya_hatasi:
+                    atlanalar.append((dosya_adi, str(dosya_hatasi)[:120]))
 
+        # Özet rapor
+        mesaj_parcalari = []
         if eklenen:
-            QMessageBox.information(
-                parent_widget,
-                "EPUB İçe Aktarım",
-                f"{eklenen} bölüm başarıyla içe aktarıldı.",
+            mesaj_parcalari.append(f"{eklenen} bölüm başarıyla içe aktarıldı.")
+        if atlanan_hashler:
+            mesaj_parcalari.append(f"{atlanan_hashler} bölüm zaten mevcut olduğu için atlandı.")
+        if atlanalar:
+            detay = "\n".join(
+                f"  • {os.path.basename(a)}: {n}" for a, n in atlanalar[:10]
             )
-        else:
+            if len(atlanalar) > 10:
+                detay += f"\n  ... ve {len(atlanalar) - 10} dosya daha."
+            mesaj_parcalari.append(f"Atlanan dosyalar ({len(atlanalar)}):\n{detay}")
+
+        if not mesaj_parcalari:
             QMessageBox.warning(
                 parent_widget,
                 "EPUB İçe Aktarım",
                 "Bölüm içeriği bulunamadı. Dosya standart EPUB formatında olmayabilir.",
+            )
+        else:
+            seviye = QMessageBox.information if eklenen else QMessageBox.warning
+            seviye(
+                parent_widget,
+                "EPUB İçe Aktarım",
+                "\n\n".join(mesaj_parcalari),
             )
 
         return eklenen

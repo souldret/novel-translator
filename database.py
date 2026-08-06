@@ -21,7 +21,7 @@ from text_utils import sozlukte_eslesenleri_bul
 DB_YOLU = os.path.join(os.path.dirname(os.path.abspath(__file__)), "novel_cevirmen.db")
 
 # Mevcut şema sürümü — yeni migrasyon ekleyince artır
-SCHEMA_SURUMU = 6  # v6: sozluk_feedback tablosu; confidence öğrenme mekanizması
+SCHEMA_SURUMU = 7  # v7: bolumler tablosuna seri_id+bolum_no index'leri
 
 # Modül düzeyinde logger
 logger = logging.getLogger("novel_cevirmen.database")
@@ -289,6 +289,24 @@ class DatabaseManager:
                     else:
                         logger.info("v5: entity_type migrasyonu gerekmedi (zaten dolu).")
 
+                # Migrasyon v6 → v7: bolumler tablosuna seri_id + bolum_no index'leri
+                if mevcut_surum < 7:
+                    bolum_indexler = [
+                        # serinin_bolumlerini_getir ve seri_bolum_sayilarini_getir
+                        ("CREATE INDEX IF NOT EXISTS idx_bolumler_seri_id "
+                         "ON bolumler (seri_id)"),
+                        # bolum_no'ya göre sıralama (ORDER BY bolum_no ASC)
+                        ("CREATE INDEX IF NOT EXISTS idx_bolumler_seri_bolum_no "
+                         "ON bolumler (seri_id, bolum_no)"),
+                    ]
+                    for ddl in bolum_indexler:
+                        try:
+                            conn.execute(ddl)
+                            idx_ad = ddl.split("idx_")[1].split(" ")[0]
+                            logger.info(f"v7: Index oluşturuldu: {idx_ad}")
+                        except sqlite3.OperationalError as e:
+                            logger.warning(f"v7: Index oluşturulamadı (zaten var?): {e}")
+
                 # Migrasyon v5 → v6: sozluk_feedback tablosu oluştur
                 if mevcut_surum < 6:
                     conn.execute("""
@@ -472,6 +490,46 @@ class DatabaseManager:
         except sqlite3.Error as hata:
             logger.error(f"Bölüm oluşturulamadı: {hata}")
             return None
+
+    def bolum_olustur_toplu(
+        self,
+        seri_id: int,
+        bolumler: list[dict],
+    ) -> list[int]:
+        """
+        Birden fazla bölümü tek bir transaction ile ekler (import için optimize).
+
+        bolumler: [{"bolum_no", "bolum_baslik", "orijinal_metin"}, ...]
+        Döndürür: eklenen bölümlerin id listesi (hata durumunda boş liste).
+        """
+        if not bolumler:
+            return []
+        try:
+            with self._baglanti_ac() as conn:
+                yeni_idler = []
+                for b in bolumler:
+                    imleç = conn.execute(
+                        """
+                        INSERT INTO bolumler
+                            (seri_id, bolum_no, bolum_baslik, orijinal_metin)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (
+                            seri_id,
+                            b.get("bolum_no", 0),
+                            b.get("bolum_baslik"),
+                            b.get("orijinal_metin"),
+                        ),
+                    )
+                    yeni_idler.append(imleç.lastrowid)
+                conn.commit()
+                logger.info(
+                    f"{len(yeni_idler)} bölüm toplu eklendi (seri_id={seri_id})."
+                )
+                return yeni_idler
+        except sqlite3.Error as hata:
+            logger.error(f"Toplu bölüm eklenemedi: {hata}")
+            return []
 
     def bolum_getir(self, bolum_id: int) -> Optional[dict]:
         """Belirtilen id'ye sahip bölümü döndürür; bulunamazsa None."""
